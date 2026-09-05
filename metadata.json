@@ -1,0 +1,6 @@
+{
+  "name": "Star Citizen Newtonian Space Sim & Unity C# Architecture",
+  "description": "First-person 6-DoF Newtonian space flight combat simulator with real-time 1v1 browser multiplayer duels, lobby status synchronization, lead PIP target tracking, and interactive Unity C# source code.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
