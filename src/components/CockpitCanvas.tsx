@@ -48,6 +48,10 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
   // Active explosion / shield impact meshes tracked frame-by-frame
   const activeExplosionMeshes = useRef<Map<string, { mesh: THREE.Mesh; geo: THREE.BufferGeometry; mat: THREE.MeshBasicMaterial; startTime: number; duration: number; scale: number }>>(new Map());
 
+  // Environmental Landmark Objects (Space Station & Floating Landing Pads)
+  const spaceStationRef = useRef<SpaceStationObject | null>(null);
+  const landingPadsRef = useRef<LandingPadObject[]>([]);
+
   // Holographic 3D radar refs
   const radarGroupRef = useRef<THREE.Group | null>(null);
   const radarContactsRef = useRef<THREE.Group | null>(null);
@@ -266,6 +270,46 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
       asteroidGroup.add(asteroid);
     }
     scene.add(asteroidGroup);
+
+    // 6b. LARGE SPACE STATION & FLOATING LANDING PADS (Environmental Landmarks)
+    const stationData = createSpaceStationModel(
+      new THREE.Vector3(550, 75, -720),
+      new THREE.Euler(0.12, 0.45, 0.08)
+    );
+    scene.add(stationData.group);
+    spaceStationRef.current = stationData;
+
+    // 4 Floating Landing Platforms positioned across the sector
+    const padConfigs = [
+      {
+        padNumber: '01',
+        pos: new THREE.Vector3(360, 20, -540),
+        rot: new THREE.Euler(0.06, 0.35, 0.02),
+      },
+      {
+        padNumber: '02',
+        pos: new THREE.Vector3(720, 140, -860),
+        rot: new THREE.Euler(-0.08, 0.55, 0.04),
+      },
+      {
+        padNumber: '03',
+        pos: new THREE.Vector3(-420, -35, -340),
+        rot: new THREE.Euler(0.1, -0.45, 0.05),
+      },
+      {
+        padNumber: '04',
+        pos: new THREE.Vector3(-140, 85, 450),
+        rot: new THREE.Euler(-0.05, -2.4, 0.02),
+      },
+    ];
+
+    const pads: LandingPadObject[] = [];
+    padConfigs.forEach((cfg) => {
+      const pad = createFloatingLandingPadModel(cfg.padNumber, cfg.pos, cfg.rot);
+      scene.add(pad.group);
+      pads.push(pad);
+    });
+    landingPadsRef.current = pads;
 
     // 7. SPACE DUST PARTICLES (Crucial for 6-DoF motion feedback!)
     const dustCount = 350;
@@ -586,6 +630,23 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
         dustPosAttr.needsUpdate = true;
       }
 
+      // Update Space Station rotation & landmark hazard beacon strobes
+      const beaconStrobeOn = Math.sin(time * 0.006) > 0.65;
+      if (spaceStationRef.current) {
+        spaceStationRef.current.habRing1.rotation.z += dt * 0.06;
+        spaceStationRef.current.habRing2.rotation.z -= dt * 0.04;
+        spaceStationRef.current.beacons.forEach((beacon) => {
+          const mat = beacon.material as THREE.MeshBasicMaterial;
+          mat.opacity = beaconStrobeOn ? 1.0 : 0.15;
+        });
+      }
+      landingPadsRef.current.forEach((pad) => {
+        pad.beacons.forEach((beacon) => {
+          const mat = beacon.material as THREE.MeshBasicMaterial;
+          mat.opacity = beaconStrobeOn ? 1.0 : 0.2;
+        });
+      });
+
       // RENDER / UPDATE REMOTE & AI SHIPS WITH SMOOTH DEAD-RECKONING INTERPOLATION
       const existingMeshMap = remoteShipMeshes.current;
       const smoothMap = smoothShipsMap.current;
@@ -744,6 +805,88 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
             ]);
             const stalkMat = new THREE.LineBasicMaterial({
               color: isLocked ? 0xff0055 : 0x0284c7,
+              transparent: true,
+              opacity: 0.5,
+            });
+            const stalk = new THREE.Line(stalkGeo, stalkMat);
+            radarContactsRef.current?.add(stalk);
+          }
+        });
+
+        // Space Station Landmark Radar Contact (Amber diamond blip)
+        if (spaceStationRef.current) {
+          const stationPos = spaceStationRef.current.position;
+          const worldRel = new THREE.Vector3(
+            stationPos.x - pState.position.x,
+            stationPos.y - pState.position.y,
+            stationPos.z - pState.position.z
+          );
+          const shipRotInverse = new THREE.Quaternion(
+            pState.rotation.x,
+            pState.rotation.y,
+            pState.rotation.z,
+            pState.rotation.w
+          ).invert();
+          const localRel = worldRel.clone().applyQuaternion(shipRotInverse);
+          const distance = localRel.length();
+          const stationRadarRange = 2500;
+          if (distance < stationRadarRange) {
+            const scaleFactor = radarSphereRadius / stationRadarRange;
+            const blipPos = localRel.multiplyScalar(scaleFactor);
+
+            const stationBlipGeo = new THREE.OctahedronGeometry(0.0075);
+            const stationBlipMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+            const stationBlip = new THREE.Mesh(stationBlipGeo, stationBlipMat);
+            stationBlip.position.copy(blipPos);
+            radarContactsRef.current?.add(stationBlip);
+
+            const stalkGeo = new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(blipPos.x, 0, blipPos.z),
+              blipPos,
+            ]);
+            const stalkMat = new THREE.LineBasicMaterial({
+              color: 0xf59e0b,
+              transparent: true,
+              opacity: 0.6,
+            });
+            const stalk = new THREE.Line(stalkGeo, stalkMat);
+            radarContactsRef.current?.add(stalk);
+          }
+        }
+
+        // Floating Landing Pads Radar Contacts (Emerald green square blips)
+        landingPadsRef.current.forEach((pad) => {
+          const padPos = pad.position;
+          const worldRel = new THREE.Vector3(
+            padPos.x - pState.position.x,
+            padPos.y - pState.position.y,
+            padPos.z - pState.position.z
+          );
+          const shipRotInverse = new THREE.Quaternion(
+            pState.rotation.x,
+            pState.rotation.y,
+            pState.rotation.z,
+            pState.rotation.w
+          ).invert();
+          const localRel = worldRel.clone().applyQuaternion(shipRotInverse);
+          const distance = localRel.length();
+          const padRadarRange = 2000;
+          if (distance < padRadarRange) {
+            const scaleFactor = radarSphereRadius / padRadarRange;
+            const blipPos = localRel.multiplyScalar(scaleFactor);
+
+            const padBlipGeo = new THREE.BoxGeometry(0.005, 0.002, 0.005);
+            const padBlipMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+            const padBlip = new THREE.Mesh(padBlipGeo, padBlipMat);
+            padBlip.position.copy(blipPos);
+            radarContactsRef.current?.add(padBlip);
+
+            const stalkGeo = new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(blipPos.x, 0, blipPos.z),
+              blipPos,
+            ]);
+            const stalkMat = new THREE.LineBasicMaterial({
+              color: 0x10b981,
               transparent: true,
               opacity: 0.5,
             });
@@ -1405,5 +1548,613 @@ function solveIntercept(
     leadPoint,
     impactPoint,
     time: t,
+  };
+}
+
+// ----------------------------------------------------------------------------
+// ENVIRONMENTAL ASSET DATA MODELS & GENERATORS (Space Station & Landing Pads)
+// ----------------------------------------------------------------------------
+
+interface SpaceStationObject {
+  group: THREE.Group;
+  habRing1: THREE.Group;
+  habRing2: THREE.Group;
+  beacons: THREE.Mesh[];
+  position: THREE.Vector3;
+}
+
+interface LandingPadObject {
+  group: THREE.Group;
+  beacons: THREE.Mesh[];
+  position: THREE.Vector3;
+  padNumber: string;
+}
+
+// Generate high-resolution canvas texture for landing platform decks
+function createLandingPadTexture(padNumber: string): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  // Background dark carbon-fiber non-skid plating
+  ctx.fillStyle = '#0b1120';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Metallic panel grid lines
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 3;
+  for (let i = 64; i < 512; i += 64) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, 512);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(512, i);
+    ctx.stroke();
+  }
+
+  // Outer border safety hazard chevrons (Yellow / Charcoal Black)
+  ctx.save();
+  ctx.strokeStyle = '#eab308';
+  ctx.lineWidth = 20;
+  ctx.strokeRect(16, 16, 480, 480);
+  ctx.restore();
+
+  // Inner border cyan trim
+  ctx.strokeStyle = '#0284c7';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(32, 32, 448, 448);
+
+  // Center Landing Ring Decal
+  ctx.beginPath();
+  ctx.arc(256, 256, 150, 0, Math.PI * 2);
+  ctx.strokeStyle = '#06b6d4';
+  ctx.lineWidth = 8;
+  ctx.stroke();
+
+  // Inner dashed alignment circle
+  ctx.save();
+  ctx.setLineDash([16, 12]);
+  ctx.beginPath();
+  ctx.arc(256, 256, 115, 0, Math.PI * 2);
+  ctx.strokeStyle = '#10b981';
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  ctx.restore();
+
+  // Crosshair alignment lines
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(40, 256);
+  ctx.lineTo(130, 256);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(382, 256);
+  ctx.lineTo(472, 256);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(256, 40);
+  ctx.lineTo(256, 130);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(256, 382);
+  ctx.lineTo(256, 472);
+  ctx.stroke();
+
+  // Center target bullseye
+  ctx.beginPath();
+  ctx.arc(256, 256, 28, 0, Math.PI * 2);
+  ctx.fillStyle = '#06b6d4';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(256, 256, 12, 0, Math.PI * 2);
+  ctx.fillStyle = '#020617';
+  ctx.fill();
+
+  // Pad designation text
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '900 48px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`PAD ${padNumber}`, 256, 195);
+
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = '700 20px monospace';
+  ctx.fillText('VTOL / SCM APPROACH', 256, 315);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
+}
+
+// Procedural Large Space Station Generator ("Station Meridian")
+function createSpaceStationModel(
+  position: THREE.Vector3,
+  rotation: THREE.Euler
+): SpaceStationObject {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  group.rotation.copy(rotation);
+
+  const beacons: THREE.Mesh[] = [];
+
+  // Station Materials
+  const hullMat = new THREE.MeshStandardMaterial({
+    color: 0x334155, // Aerospace dark slate titanium
+    metalness: 0.85,
+    roughness: 0.35,
+    emissive: 0x0f172a,
+    emissiveIntensity: 0.2,
+  });
+
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b,
+    metalness: 0.9,
+    roughness: 0.4,
+  });
+
+  const goldTrussMat = new THREE.MeshStandardMaterial({
+    color: 0xd97706,
+    metalness: 0.85,
+    roughness: 0.35,
+  });
+
+  const windowAmberMat = new THREE.MeshStandardMaterial({
+    color: 0xfbbf24,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 1.5,
+    roughness: 0.2,
+  });
+
+  const windowCyanMat = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    emissive: 0x00f0ff,
+    emissiveIntensity: 1.6,
+    roughness: 0.2,
+  });
+
+  const solarCellMat = new THREE.MeshStandardMaterial({
+    color: 0x1e3a8a,
+    metalness: 0.95,
+    roughness: 0.15,
+    emissive: 0x1d4ed8,
+    emissiveIntensity: 0.45,
+  });
+
+  const redBeaconMat = new THREE.MeshBasicMaterial({
+    color: 0xff0044,
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  const greenBeaconMat = new THREE.MeshBasicMaterial({
+    color: 0x10b981,
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  const whiteBeaconMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  // 1. CENTRAL SPINDLE AXIS (Main structural core, length 280m, along Z-axis)
+  const spindleGeo = new THREE.CylinderGeometry(18, 22, 280, 24);
+  spindleGeo.rotateX(Math.PI / 2);
+  const spindle = new THREE.Mesh(spindleGeo, hullMat);
+  group.add(spindle);
+
+  // Spindle collar rings
+  const collarGeo = new THREE.CylinderGeometry(23, 23, 10, 24);
+  collarGeo.rotateX(Math.PI / 2);
+  [-110, -50, 0, 50, 110].forEach((zPos) => {
+    const collar = new THREE.Mesh(collarGeo, accentMat);
+    collar.position.z = zPos;
+    group.add(collar);
+  });
+
+  // Forward Hangar & Docking Bay Collar (at Z = +140)
+  const hangarCollarGeo = new THREE.CylinderGeometry(28, 24, 45, 24, 1, true);
+  hangarCollarGeo.rotateX(Math.PI / 2);
+  const hangarCollar = new THREE.Mesh(hangarCollarGeo, accentMat);
+  hangarCollar.position.z = 150;
+  group.add(hangarCollar);
+
+  // Interior docking bay runway light strips
+  const runwayBarGeo = new THREE.BoxGeometry(1.2, 0.4, 38);
+  for (let a = 0; a < 4; a++) {
+    const angle = (a * Math.PI) / 2;
+    const bar = new THREE.Mesh(
+      runwayBarGeo,
+      new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.85 })
+    );
+    bar.position.set(Math.cos(angle) * 21, Math.sin(angle) * 21, 150);
+    bar.rotation.z = angle;
+    group.add(bar);
+  }
+
+  // Green approach threshold lights at hangar entrance
+  for (let a = 0; a < 8; a++) {
+    const angle = (a * Math.PI) / 4;
+    const beaconGeo = new THREE.SphereGeometry(1.2, 8, 8);
+    const b = new THREE.Mesh(beaconGeo, greenBeaconMat);
+    b.position.set(Math.cos(angle) * 27, Math.sin(angle) * 27, 172);
+    group.add(b);
+    beacons.push(b);
+  }
+
+  // Rear Engineering / Reactor Heat Radiator Fins (at Z = -130)
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * Math.PI) / 3;
+    const finGeo = new THREE.BoxGeometry(2, 42, 48);
+    const fin = new THREE.Mesh(finGeo, accentMat);
+    fin.position.set(Math.cos(angle) * 26, Math.sin(angle) * 26, -125);
+    fin.rotation.z = angle;
+    group.add(fin);
+  }
+
+  // Reactor core heat glow (rear)
+  const reactorGeo = new THREE.SphereGeometry(12, 16, 16);
+  const reactorMat = new THREE.MeshStandardMaterial({
+    color: 0xef4444,
+    emissive: 0xef4444,
+    emissiveIntensity: 1.2,
+    roughness: 0.3,
+  });
+  const reactor = new THREE.Mesh(reactorGeo, reactorMat);
+  reactor.position.z = -142;
+  group.add(reactor);
+
+  // Central Command Ops Superstructure (Midsection top)
+  const opsGeo = new THREE.BoxGeometry(26, 16, 44);
+  const opsBridge = new THREE.Mesh(opsGeo, accentMat);
+  opsBridge.position.set(0, 24, 0);
+  group.add(opsBridge);
+
+  // Panoramic Observation Window Strip
+  const opsWindowGeo = new THREE.BoxGeometry(27, 3.5, 42);
+  const opsWindow = new THREE.Mesh(opsWindowGeo, windowCyanMat);
+  opsWindow.position.set(0, 27, 0);
+  group.add(opsWindow);
+
+  // Comm Tower / Primary Sensor Mast
+  const spireMastGeo = new THREE.CylinderGeometry(1.2, 2.2, 75, 8);
+  const spireMast = new THREE.Mesh(spireMastGeo, goldTrussMat);
+  spireMast.position.set(0, 68, 0);
+  group.add(spireMast);
+
+  // Dual Parabolic Dish Antennas
+  const dishGeo = new THREE.ConeGeometry(9, 4, 16, 1, true);
+  const dish1 = new THREE.Mesh(dishGeo, accentMat);
+  dish1.position.set(0, 85, 8);
+  dish1.rotation.x = 0.5;
+  group.add(dish1);
+
+  const dish2 = new THREE.Mesh(dishGeo, accentMat);
+  dish2.position.set(0, 72, -8);
+  dish2.rotation.x = -0.5;
+  dish2.rotation.y = Math.PI;
+  group.add(dish2);
+
+  // Red obstacle beacon on spire tip
+  const spireBeaconGeo = new THREE.SphereGeometry(1.8, 8, 8);
+  const spireBeacon = new THREE.Mesh(spireBeaconGeo, redBeaconMat);
+  spireBeacon.position.set(0, 106, 0);
+  group.add(spireBeacon);
+  beacons.push(spireBeacon);
+
+  // 2. HABITATION RING ALPHA (Outer rotating ring, radius 135m)
+  const habRing1 = new THREE.Group();
+  habRing1.position.set(0, 0, 15);
+  group.add(habRing1);
+
+  const torus1Geo = new THREE.TorusGeometry(135, 7.5, 16, 64);
+  const torus1 = new THREE.Mesh(torus1Geo, hullMat);
+  habRing1.add(torus1);
+
+  // 6 radial spokes
+  const spoke1Geo = new THREE.CylinderGeometry(2.4, 2.4, 135, 8);
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * Math.PI) / 3;
+    const spoke = new THREE.Mesh(spoke1Geo, accentMat);
+    spoke.position.set(Math.cos(angle) * 67.5, Math.sin(angle) * 67.5, 0);
+    spoke.rotation.z = angle + Math.PI / 2;
+    habRing1.add(spoke);
+
+    // Spoke counterweight / elevator car
+    const podGeo = new THREE.BoxGeometry(8, 8, 12);
+    const pod = new THREE.Mesh(podGeo, accentMat);
+    pod.position.set(Math.cos(angle) * 90, Math.sin(angle) * 90, 0);
+    pod.rotation.z = angle;
+    habRing1.add(pod);
+
+    // White hazard strobe beacon at spoke tip
+    const b = new THREE.Mesh(spireBeaconGeo, whiteBeaconMat);
+    b.position.set(Math.cos(angle) * 143, Math.sin(angle) * 143, 0);
+    habRing1.add(b);
+    beacons.push(b);
+  }
+
+  // Observation window clusters along outer ring rim
+  const winGeo = new THREE.BoxGeometry(10, 4, 3);
+  for (let i = 0; i < 18; i++) {
+    const angle = (i * Math.PI) / 9;
+    const isAmber = i % 2 === 0;
+    const win = new THREE.Mesh(winGeo, isAmber ? windowAmberMat : windowCyanMat);
+    win.position.set(Math.cos(angle) * 142, Math.sin(angle) * 142, 0);
+    win.rotation.z = angle + Math.PI / 2;
+    habRing1.add(win);
+  }
+
+  // 3. HABITATION RING BETA (Inner counter-rotating ring, radius 82m)
+  const habRing2 = new THREE.Group();
+  habRing2.position.set(0, 0, -35);
+  group.add(habRing2);
+
+  const torus2Geo = new THREE.TorusGeometry(82, 5, 14, 48);
+  const torus2 = new THREE.Mesh(torus2Geo, accentMat);
+  habRing2.add(torus2);
+
+  // 4 radial spokes
+  const spoke2Geo = new THREE.CylinderGeometry(1.8, 1.8, 82, 8);
+  for (let i = 0; i < 4; i++) {
+    const angle = (i * Math.PI) / 2;
+    const spoke = new THREE.Mesh(spoke2Geo, hullMat);
+    spoke.position.set(Math.cos(angle) * 41, Math.sin(angle) * 41, 0);
+    spoke.rotation.z = angle + Math.PI / 2;
+    habRing2.add(spoke);
+
+    const b = new THREE.Mesh(spireBeaconGeo, redBeaconMat);
+    b.position.set(Math.cos(angle) * 88, Math.sin(angle) * 88, 0);
+    habRing2.add(b);
+    beacons.push(b);
+  }
+
+  // Window arrays on inner ring
+  for (let i = 0; i < 12; i++) {
+    const angle = (i * Math.PI) / 6;
+    const win = new THREE.Mesh(new THREE.BoxGeometry(6, 2.5, 2), windowCyanMat);
+    win.position.set(Math.cos(angle) * 86.5, Math.sin(angle) * 86.5, 0);
+    win.rotation.z = angle + Math.PI / 2;
+    habRing2.add(win);
+  }
+
+  // 4. SOLAR RADIATOR WING ARRAYS (Left & Right Booms)
+  const trussArmGeo = new THREE.BoxGeometry(90, 2.5, 2.5);
+  const solarPanelGeo = new THREE.BoxGeometry(42, 1.2, 22);
+
+  [-1, 1].forEach((dir) => {
+    const boom = new THREE.Mesh(trussArmGeo, goldTrussMat);
+    boom.position.set(dir * 80, 0, -85);
+    group.add(boom);
+
+    [-1, 1].forEach((panelSide) => {
+      const panel = new THREE.Mesh(solarPanelGeo, solarCellMat);
+      panel.position.set(dir * (75 + panelSide * 26), 0, -85);
+      group.add(panel);
+
+      if (panelSide === 1) {
+        const wingTipBeacon = new THREE.Mesh(spireBeaconGeo, whiteBeaconMat);
+        wingTipBeacon.position.set(dir * 128, 0, -85);
+        group.add(wingTipBeacon);
+        beacons.push(wingTipBeacon);
+      }
+    });
+  });
+
+  return {
+    group,
+    habRing1,
+    habRing2,
+    beacons,
+    position,
+  };
+}
+
+// Procedural Floating Landing Pad Generator
+function createFloatingLandingPadModel(
+  padNumber: string,
+  position: THREE.Vector3,
+  rotation: THREE.Euler
+): LandingPadObject {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  group.rotation.copy(rotation);
+
+  const beacons: THREE.Mesh[] = [];
+
+  const platformMat = new THREE.MeshStandardMaterial({
+    color: 0x1e293b, // Industrial Dark Titanium
+    metalness: 0.85,
+    roughness: 0.35,
+  });
+
+  const underframeMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    metalness: 0.9,
+    roughness: 0.45,
+  });
+
+  const orangeTankMat = new THREE.MeshStandardMaterial({
+    color: 0xea580c,
+    metalness: 0.7,
+    roughness: 0.3,
+  });
+
+  const whiteTankMat = new THREE.MeshStandardMaterial({
+    color: 0xf1f5f9,
+    metalness: 0.8,
+    roughness: 0.25,
+  });
+
+  const greenBeaconMat = new THREE.MeshBasicMaterial({
+    color: 0x10b981,
+    transparent: true,
+    opacity: 0.95,
+  });
+
+  const redBeaconMat = new THREE.MeshBasicMaterial({
+    color: 0xef4444,
+    transparent: true,
+    opacity: 0.95,
+  });
+
+  const amberBeaconMat = new THREE.MeshBasicMaterial({
+    color: 0xf59e0b,
+    transparent: true,
+    opacity: 0.95,
+  });
+
+  // 1. OCTAGONAL PLATFORM SLAB
+  const deckGeo = new THREE.CylinderGeometry(22, 25, 3.2, 8);
+  const deck = new THREE.Mesh(deckGeo, platformMat);
+  deck.position.y = 0;
+  group.add(deck);
+
+  // 2. PROCEDURAL HIGH-RES LANDING DECK DECAL
+  const deckTexture = createLandingPadTexture(padNumber);
+  const decalGeo = new THREE.PlaneGeometry(36, 36);
+  const decalMat = new THREE.MeshBasicMaterial({
+    map: deckTexture,
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  });
+  const decal = new THREE.Mesh(decalGeo, decalMat);
+  decal.rotation.x = -Math.PI / 2;
+  decal.position.y = 1.62;
+  group.add(decal);
+
+  // 3. PERIMETER RUNWAY & OBSTACLE LIGHT BOLLARDS (8 corners)
+  const bollardGeo = new THREE.CylinderGeometry(0.35, 0.45, 1.6, 8);
+  const beaconSphereGeo = new THREE.SphereGeometry(0.55, 8, 8);
+
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI) / 4 + Math.PI / 8;
+    const bx = Math.cos(angle) * 23;
+    const bz = Math.sin(angle) * 23;
+
+    const bollard = new THREE.Mesh(bollardGeo, underframeMat);
+    bollard.position.set(bx, 1.6, bz);
+    group.add(bollard);
+
+    // Front approach corners: Green runway lights
+    // Rear corners: Red hazard lights
+    // Lateral corners: Amber edge lights
+    let bMat = amberBeaconMat;
+    if (i === 6 || i === 7) {
+      bMat = greenBeaconMat; // Approach threshold
+    } else if (i === 2 || i === 3) {
+      bMat = redBeaconMat; // Rear threshold
+    }
+
+    const beacon = new THREE.Mesh(beaconSphereGeo, bMat);
+    beacon.position.set(bx, 2.5, bz);
+    group.add(beacon);
+    beacons.push(beacon);
+  }
+
+  // 4. FLOODLIGHT STANCHIONS (Left & Right)
+  [-1, 1].forEach((dir) => {
+    const poleGeo = new THREE.BoxGeometry(0.7, 7, 0.7);
+    const pole = new THREE.Mesh(poleGeo, underframeMat);
+    pole.position.set(dir * 22, 4.5, 0);
+    pole.rotation.z = -dir * 0.2; // Angled inward
+    group.add(pole);
+
+    const headGeo = new THREE.BoxGeometry(1.6, 0.8, 1.8);
+    const head = new THREE.Mesh(
+      headGeo,
+      new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        emissive: 0xf8fafc,
+        emissiveIntensity: 0.8,
+        roughness: 0.2,
+      })
+    );
+    head.position.set(dir * 20.8, 7.8, 0);
+    head.rotation.z = -dir * 0.45;
+    group.add(head);
+  });
+
+  // 5. UNDER-CHASSIS STRUCTURAL SPACEFRAME TRUSS
+  const truss1Geo = new THREE.BoxGeometry(34, 2.2, 2.2);
+  const truss1 = new THREE.Mesh(truss1Geo, underframeMat);
+  truss1.position.y = -2.2;
+  group.add(truss1);
+
+  const truss2 = new THREE.Mesh(truss1Geo, underframeMat);
+  truss2.position.y = -2.2;
+  truss2.rotation.y = Math.PI / 2;
+  group.add(truss2);
+
+  // 6. CRYOGENIC PROPELLANT STORAGE TANKS (Clamped underneath)
+  const tankGeo = new THREE.CylinderGeometry(2.2, 2.2, 14, 12);
+  tankGeo.rotateZ(Math.PI / 2);
+
+  const tank1 = new THREE.Mesh(tankGeo, whiteTankMat);
+  tank1.position.set(0, -4.2, 8);
+  group.add(tank1);
+
+  const tank2 = new THREE.Mesh(tankGeo, orangeTankMat);
+  tank2.position.set(0, -4.2, -8);
+  group.add(tank2);
+
+  // 7. RCS STABILIZATION THRUSTER NOZZLES (4 corners underneath)
+  const nozzleGeo = new THREE.ConeGeometry(1.2, 2.5, 8);
+  const nozzleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.3 });
+  [
+    [-14, -14],
+    [-14, 14],
+    [14, -14],
+    [14, 14],
+  ].forEach(([nx, nz]) => {
+    const nozzle = new THREE.Mesh(nozzleGeo, nozzleMat);
+    nozzle.position.set(nx, -3.2, nz);
+    nozzle.rotation.x = Math.PI;
+    group.add(nozzle);
+  });
+
+  // 8. AUTOMATED FLIGHT SERVICE TERMINAL CABIN & ANTENNA
+  const cabinGeo = new THREE.BoxGeometry(5.5, 4.2, 5.5);
+  const cabin = new THREE.Mesh(cabinGeo, platformMat);
+  cabin.position.set(16, 3.2, 16);
+  group.add(cabin);
+
+  // Terminal observation window
+  const cabinWinGeo = new THREE.BoxGeometry(5.7, 1.5, 3.5);
+  const cabinWin = new THREE.Mesh(
+    cabinWinGeo,
+    new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 1.2,
+      roughness: 0.2,
+    })
+  );
+  cabinWin.position.set(16, 3.8, 16);
+  group.add(cabinWin);
+
+  // Comm antenna mast
+  const mastGeo = new THREE.CylinderGeometry(0.2, 0.4, 10, 8);
+  const mast = new THREE.Mesh(mastGeo, underframeMat);
+  mast.position.set(16, 9.8, 16);
+  group.add(mast);
+
+  const topBeacon = new THREE.Mesh(beaconSphereGeo, redBeaconMat);
+  topBeacon.position.set(16, 15, 16);
+  group.add(topBeacon);
+  beacons.push(topBeacon);
+
+  return {
+    group,
+    beacons,
+    position,
+    padNumber,
   };
 }
