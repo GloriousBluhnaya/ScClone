@@ -392,7 +392,15 @@ export default function App() {
       localStorage.setItem('custom_ws_server', serverParam.trim());
     }
 
-    const effectiveCustomServer = serverParam || customServerUrl || (typeof window !== 'undefined' ? localStorage.getItem('custom_ws_server') : '');
+    // Railway is the default multiplayer server in production.
+    // A URL from the `server` query parameter or the Dedicated Server setting
+    // still takes precedence, which preserves manual/custom-server support.
+    const configuredServer =
+      import.meta.env.VITE_GAME_SERVER_URL?.trim() ||
+      (typeof window !== 'undefined' ? localStorage.getItem('custom_ws_server')?.trim() : null) ||
+      '';
+
+    const effectiveCustomServer = serverParam?.trim() || customServerUrl?.trim() || configuredServer;
 
     if (!roomId) {
       roomId = 'duel-' + Math.random().toString(36).substring(2, 8);
