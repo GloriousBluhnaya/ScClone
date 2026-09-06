@@ -80,7 +80,7 @@ function parseQuaternion(val: any, fallback: Quaternion = { x: 0, y: 0, z: 0, w:
 
 const app = express();
 const server = http.createServer(app);
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
@@ -152,7 +152,7 @@ function broadcastToRoom(room: Room, msg: object, excludeWs?: WebSocket) {
 }
 
 // WebSocket Server with explicit HTTP upgrade handling
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocket("scclone-production.up.railway.app")
 
 server.on("upgrade", (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
