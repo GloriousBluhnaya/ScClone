@@ -1146,7 +1146,7 @@ function createSpaceshipModel(isAI: boolean, callsign: string = ''): THREE.Group
   });
 
   // High-visibility Shield/Sensor Aura to make ships pop against the dark background at distance
-  const auraGeo = new THREE.SphereGeometry(7.5, 12, 12);
+  const auraGeo = new THREE.SphereGeometry(4.5, 12, 12);
   const auraMat = new THREE.MeshBasicMaterial({
     color: primaryColor,
     transparent: true,
