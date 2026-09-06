@@ -152,7 +152,7 @@ function broadcastToRoom(room: Room, msg: object, excludeWs?: WebSocket) {
 }
 
 // WebSocket Server with explicit HTTP upgrade handling
-const wss = new WebSocket("scclone-production.up.railway.app")
+const wss = new WebSocket
 
 server.on("upgrade", (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
