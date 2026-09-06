@@ -13,6 +13,7 @@ export const DEFAULT_FLIGHT_STICK_CONFIG: FlightStickConfig = {
   enabled: true,
   primaryDeviceIndex: 0,
   secondaryDeviceIndex: -1,
+  pedalsDeviceIndex: -1,
   axes: {
     pitch: {
       stickIndex: 0,
@@ -82,6 +83,7 @@ export const PRESET_HOTAS: FlightStickConfig = {
   enabled: true,
   primaryDeviceIndex: 0,
   secondaryDeviceIndex: 1, // Separate Throttle Quadrant on Gamepad index 1
+  pedalsDeviceIndex: -1,
   axes: {
     pitch: { stickIndex: 0, axisIndex: 1, inverted: true, deadzone: 0.04, sensitivity: 1.0 },
     roll: { stickIndex: 0, axisIndex: 0, inverted: false, deadzone: 0.04, sensitivity: 1.0 },
@@ -110,6 +112,7 @@ export const PRESET_HOSAS_DUAL_STICK: FlightStickConfig = {
   enabled: true,
   primaryDeviceIndex: 0,   // Right Stick: Rotations (Pitch, Yaw, Roll)
   secondaryDeviceIndex: 1, // Left Stick: Translations (Surge, Sway, Heave)
+  pedalsDeviceIndex: -1,
   axes: {
     pitch: { stickIndex: 0, axisIndex: 1, inverted: true, deadzone: 0.04, sensitivity: 1.0 },
     yaw: { stickIndex: 0, axisIndex: 2, inverted: false, deadzone: 0.05, sensitivity: 1.1 },
@@ -138,6 +141,7 @@ export const PRESET_GAMEPAD: FlightStickConfig = {
   enabled: true,
   primaryDeviceIndex: 0,
   secondaryDeviceIndex: -1,
+  pedalsDeviceIndex: -1,
   axes: {
     pitch: { stickIndex: 0, axisIndex: 1, inverted: true, deadzone: 0.08, sensitivity: 1.2 }, // Left Stick Y
     yaw: { stickIndex: 0, axisIndex: 0, inverted: false, deadzone: 0.08, sensitivity: 1.2 },  // Left Stick X
@@ -168,7 +172,7 @@ export const PRESET_GAMEPAD: FlightStickConfig = {
 export function loadInputDeviceMode(): InputDeviceMode {
   try {
     const saved = localStorage.getItem(INPUT_MODE_STORAGE_KEY);
-    if (saved === 'flight_stick' || saved === 'keyboard_mouse') {
+    if (saved === 'flight_stick' || saved === 'keyboard_mouse' || saved === 'hosam') {
       return saved;
     }
   } catch (e) {
@@ -286,14 +290,14 @@ function getTargetGamepad(
   stickSlot: number,
   gamepads: (Gamepad | null)[]
 ): Gamepad | null {
-  const activeDeviceIndex =
-    stickSlot === 1
-      ? config.secondaryDeviceIndex >= 0
-        ? config.secondaryDeviceIndex
-        : 1
-      : config.primaryDeviceIndex >= 0
-      ? config.primaryDeviceIndex
-      : 0;
+  let activeDeviceIndex = 0;
+  if (stickSlot === 2) {
+    activeDeviceIndex = config.pedalsDeviceIndex >= 0 ? config.pedalsDeviceIndex : 2;
+  } else if (stickSlot === 1) {
+    activeDeviceIndex = config.secondaryDeviceIndex >= 0 ? config.secondaryDeviceIndex : 1;
+  } else {
+    activeDeviceIndex = config.primaryDeviceIndex >= 0 ? config.primaryDeviceIndex : 0;
+  }
 
   // Try direct index
   if (gamepads[activeDeviceIndex] && gamepads[activeDeviceIndex]?.connected) {

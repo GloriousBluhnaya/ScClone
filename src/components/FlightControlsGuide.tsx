@@ -298,7 +298,7 @@ export const FlightControlsGuide: React.FC<FlightControlsGuideProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => {
                 onSelectInputDeviceMode('keyboard_mouse');
@@ -315,6 +315,25 @@ export const FlightControlsGuide: React.FC<FlightControlsGuideProps> = ({
               <Keyboard className="w-3.5 h-3.5" />
               <span>Mouse & Keyboard</span>
               {inputDeviceMode === 'keyboard_mouse' && <CheckCircle2 className="w-3.5 h-3.5 ml-0.5" />}
+            </button>
+
+            <button
+              onClick={() => {
+                onSelectInputDeviceMode('hosam');
+                setActiveTab('flight_stick');
+                setStatusMessage({ text: 'Active input switched to HOSAM (Stick + Mouse)', type: 'info' });
+                setTimeout(() => setStatusMessage(null), 2500);
+              }}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                inputDeviceMode === 'hosam'
+                  ? 'bg-purple-500 text-slate-950 shadow-md shadow-purple-500/30'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+              title="Hands on Stick and Mouse (Mouse controls Pitch/Yaw, Stick controls Strafe & Roll)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span>HOSAM (Stick + Mouse)</span>
+              {inputDeviceMode === 'hosam' && <CheckCircle2 className="w-3.5 h-3.5 ml-0.5" />}
             </button>
 
             <button

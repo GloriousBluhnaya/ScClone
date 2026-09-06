@@ -181,7 +181,7 @@ export interface KeyBindingItem {
 
 export type KeyBindingsMap = Record<ControlActionId, KeyBindingItem>;
 
-export type InputDeviceMode = 'keyboard_mouse' | 'flight_stick';
+export type InputDeviceMode = 'keyboard_mouse' | 'flight_stick' | 'hosam';
 
 export interface FlightStickAxisConfig {
   stickIndex: number; // 0 for Primary Stick, 1 for Secondary Stick / Throttle, -1 for Auto/Any
@@ -201,6 +201,7 @@ export interface FlightStickConfig {
   enabled: boolean;
   primaryDeviceIndex: number;   // Gamepad API index (0, 1, 2...)
   secondaryDeviceIndex: number; // For HOSAS or separate throttle (-1 = none)
+  pedalsDeviceIndex: number;    // For rudder pedals (-1 = none)
   axes: {
     pitch: FlightStickAxisConfig;
     yaw: FlightStickAxisConfig;

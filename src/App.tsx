@@ -41,7 +41,7 @@ import {
   readFlightStickInputs,
 } from './utils/flightStickConfig';
 import { normalizeShip, normalizeVector3D, normalizeQuaternionD } from './utils/shipNormalization';
-import { Code2, HelpCircle, Users, Volume2, VolumeX, RotateCcw, Gamepad, Keyboard, Trophy, Swords, Copy, Check, Server, Wifi, Globe } from 'lucide-react';
+import { Code2, HelpCircle, Users, Volume2, VolumeX, RotateCcw, Gamepad, Keyboard, Trophy, Swords, Copy, Check, Server, Wifi, Globe, Sparkles } from 'lucide-react';
 
 export default function App() {
   // Subsystem instances
@@ -54,8 +54,20 @@ export default function App() {
   const physicsStateRef = useRef(physicsState);
   physicsStateRef.current = physicsState;
 
-  // Pilot Input State
+  // Pilot Input State (Combined / Final applied in physics frame)
   const inputsRef = useRef<ThrusterInputs>({
+    pitch: 0,
+    yaw: 0,
+    roll: 0,
+    surge: 0,
+    sway: 0,
+    heave: 0,
+    boost: false,
+    primaryFire: false,
+  });
+
+  // Pure Keyboard/Mouse-derived input values to avoid stick feedback contamination
+  const keyboardInputsRef = useRef<ThrusterInputs>({
     pitch: 0,
     yaw: 0,
     roll: 0,
@@ -234,66 +246,66 @@ export default function App() {
     const rightActive = isActionPressed(kb.strafeRight);
     const leftActive = isActionPressed(kb.strafeLeft);
     if (rightActive && leftActive) {
-      inputsRef.current.sway = lastAxisDirection.current.sway || 1;
+      keyboardInputsRef.current.sway = lastAxisDirection.current.sway || 1;
     } else if (rightActive) {
-      inputsRef.current.sway = 1;
+      keyboardInputsRef.current.sway = 1;
       lastAxisDirection.current.sway = 1;
     } else if (leftActive) {
-      inputsRef.current.sway = -1;
+      keyboardInputsRef.current.sway = -1;
       lastAxisDirection.current.sway = -1;
     } else {
-      inputsRef.current.sway = 0;
+      keyboardInputsRef.current.sway = 0;
     }
 
     // 2. Vertical Strafe (Heave): Up / Down
     const upActive = isActionPressed(kb.strafeUp);
     const downActive = isActionPressed(kb.strafeDown);
     if (upActive && downActive) {
-      inputsRef.current.heave = lastAxisDirection.current.heave || 1;
+      keyboardInputsRef.current.heave = lastAxisDirection.current.heave || 1;
     } else if (upActive) {
-      inputsRef.current.heave = 1;
+      keyboardInputsRef.current.heave = 1;
       lastAxisDirection.current.heave = 1;
     } else if (downActive) {
-      inputsRef.current.heave = -1;
+      keyboardInputsRef.current.heave = -1;
       lastAxisDirection.current.heave = -1;
     } else {
-      inputsRef.current.heave = 0;
+      keyboardInputsRef.current.heave = 0;
     }
 
     // 3. Surge (Throttle Forward / Reverse)
     const fwdActive = isActionPressed(kb.throttleForward);
     const revActive = isActionPressed(kb.throttleReverse);
     if (fwdActive && revActive) {
-      inputsRef.current.surge = lastAxisDirection.current.surge || 1;
+      keyboardInputsRef.current.surge = lastAxisDirection.current.surge || 1;
     } else if (fwdActive) {
-      inputsRef.current.surge = 1;
+      keyboardInputsRef.current.surge = 1;
       lastAxisDirection.current.surge = 1;
     } else if (revActive) {
-      inputsRef.current.surge = -1;
+      keyboardInputsRef.current.surge = -1;
       lastAxisDirection.current.surge = -1;
     } else if (wheelSurgeActive.current !== 0) {
-      inputsRef.current.surge = wheelSurgeActive.current;
+      keyboardInputsRef.current.surge = wheelSurgeActive.current;
     } else {
-      inputsRef.current.surge = 0;
+      keyboardInputsRef.current.surge = 0;
     }
 
     // 4. Roll (Left / Right)
     const rollRightActive = isActionPressed(kb.rollRight);
     const rollLeftActive = isActionPressed(kb.rollLeft);
     if (rollRightActive && rollLeftActive) {
-      inputsRef.current.roll = lastAxisDirection.current.roll || 1;
+      keyboardInputsRef.current.roll = lastAxisDirection.current.roll || 1;
     } else if (rollRightActive) {
-      inputsRef.current.roll = 1;
+      keyboardInputsRef.current.roll = 1;
       lastAxisDirection.current.roll = 1;
     } else if (rollLeftActive) {
-      inputsRef.current.roll = -1;
+      keyboardInputsRef.current.roll = -1;
       lastAxisDirection.current.roll = -1;
     } else {
-      inputsRef.current.roll = 0;
+      keyboardInputsRef.current.roll = 0;
     }
 
     // 5. Boost
-    inputsRef.current.boost = isActionPressed(kb.boost);
+    keyboardInputsRef.current.boost = isActionPressed(kb.boost);
 
     // 6. Primary Fire
     const isMouse0BoundToMovement =
@@ -304,7 +316,7 @@ export default function App() {
       doesCodeMatchAction(kb.recenterVJoy, 'Mouse0');
       
     const isPrimaryFirePressed = isActionPressed(kb.primaryFire) || (pressed.has('Mouse0') && !isMouse0BoundToMovement);
-    inputsRef.current.primaryFire = isPrimaryFirePressed;
+    keyboardInputsRef.current.primaryFire = isPrimaryFirePressed;
   }, []);
 
   const handleSelectInputDeviceMode = useCallback((mode: InputDeviceMode) => {
@@ -314,9 +326,7 @@ export default function App() {
     // Clear active keys when switching modes
     activeInputCodes.current.clear();
     wheelSurgeActive.current = 0;
-    if (mode === 'keyboard_mouse') {
-      recalculateContinuousInputs();
-    }
+    recalculateContinuousInputs();
   }, [recalculateContinuousInputs]);
 
   const handleUpdateFlightStickConfig = useCallback((newConfig: FlightStickConfig) => {
@@ -810,7 +820,7 @@ export default function App() {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (inputDeviceModeRef.current !== 'keyboard_mouse') return;
+      if (inputDeviceModeRef.current !== 'keyboard_mouse' && inputDeviceModeRef.current !== 'hosam') return;
 
       const current = vjoyRef.current;
       const cx = current.centerX;
@@ -1013,43 +1023,90 @@ export default function App() {
       const dt = Math.min((time - lastTime) / 1000, 0.08);
       lastTime = time;
 
-      // Poll Flight Stick / Gamepad Inputs if active
-      if (inputDeviceModeRef.current === 'flight_stick') {
+      // Unify inputs calculation based on active input mode
+      const currentMode = inputDeviceModeRef.current;
+      const kb = keyboardInputsRef.current;
+
+      // Safe placeholder object for flight stick axes and buttons if in KBM mode
+      let stick = {
+        pitch: 0,
+        yaw: 0,
+        roll: 0,
+        surge: 0,
+        sway: 0,
+        heave: 0,
+        primaryFire: false,
+        boost: false,
+        toggleDecoupled: false,
+        cycleTarget: false,
+      };
+
+      if (currentMode === 'keyboard_mouse') {
+        inputsRef.current.pitch = mouseStick.current.y;
+        inputsRef.current.yaw = mouseStick.current.x;
+        inputsRef.current.roll = kb.roll;
+        inputsRef.current.surge = kb.surge;
+        inputsRef.current.sway = kb.sway;
+        inputsRef.current.heave = kb.heave;
+        inputsRef.current.boost = kb.boost;
+        inputsRef.current.primaryFire = kb.primaryFire;
+      } else {
         const gamepads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
-        const stick = readFlightStickInputs(flightStickConfigRef.current, gamepads);
+        stick = readFlightStickInputs(flightStickConfigRef.current, gamepads);
 
-        inputsRef.current.pitch = stick.pitch;
-        inputsRef.current.yaw = stick.yaw;
-        inputsRef.current.roll = stick.roll;
-        inputsRef.current.surge = stick.surge;
-        inputsRef.current.sway = stick.sway;
-        inputsRef.current.heave = stick.heave;
-        inputsRef.current.boost = stick.boost;
+        if (currentMode === 'flight_stick') {
+          inputsRef.current.pitch = stick.pitch;
+          inputsRef.current.yaw = stick.yaw;
+          inputsRef.current.roll = stick.roll;
+          inputsRef.current.surge = stick.surge;
+          inputsRef.current.sway = stick.sway;
+          inputsRef.current.heave = stick.heave;
+          inputsRef.current.boost = stick.boost;
+          inputsRef.current.primaryFire = stick.primaryFire || kb.primaryFire;
+        } else {
+          // HOSAM Mode: Pitch and Yaw are controlled by the Mouse!
+          inputsRef.current.pitch = mouseStick.current.y;
+          inputsRef.current.yaw = mouseStick.current.x;
 
-        // Synchronize HUD Virtual Joystick deflection representation
-        const currentVJoy = vjoyRef.current;
-        const maxR = currentVJoy.maxRadius;
-        const defl = Math.sqrt(stick.yaw * stick.yaw + stick.pitch * stick.pitch);
-        const deflPct = Math.min(100, Math.round(defl * 100));
-        const pPct = Math.round(stick.pitch * 100);
-        const yPct = Math.round(stick.yaw * 100);
-        const mx = currentVJoy.centerX + stick.yaw * maxR;
-        const my = currentVJoy.centerY - stick.pitch * maxR * (currentVJoy.isInverted ? -1 : 1);
+          // For translation and roll under HOSAM:
+          // If the flight stick has active deflection (value is non-zero, meaning it's outside its custom deadzone),
+          // use the analog stick value. Otherwise, fall back to keyboard keybindings!
+          inputsRef.current.roll = stick.roll !== 0 ? stick.roll : kb.roll;
+          inputsRef.current.surge = stick.surge !== 0 ? stick.surge : kb.surge;
+          inputsRef.current.sway = stick.sway !== 0 ? stick.sway : kb.sway;
+          inputsRef.current.heave = stick.heave !== 0 ? stick.heave : kb.heave;
+          inputsRef.current.boost = stick.boost || kb.boost;
+          inputsRef.current.primaryFire = stick.primaryFire || kb.primaryFire;
+        }
+      }
 
-        setVirtualJoystick((prev) => ({
-          ...prev,
-          mouseX: mx,
-          mouseY: my,
-          pitchInput: stick.pitch,
-          yawInput: stick.yaw,
-          pitchPercent: pPct,
-          yawPercent: yPct,
-          deflectionPercent: deflPct,
-        }));
+      // Synchronize HUD Virtual Joystick deflection representation
+      const currentVJoy = vjoyRef.current;
+      const maxR = currentVJoy.maxRadius;
+      
+      const activeYaw = currentMode === 'flight_stick' ? stick.yaw : mouseStick.current.x;
+      const activePitch = currentMode === 'flight_stick' ? stick.pitch : mouseStick.current.y;
 
-        // Primary fire trigger
-        inputsRef.current.primaryFire = stick.primaryFire;
+      const defl = Math.sqrt(activeYaw * activeYaw + activePitch * activePitch);
+      const deflPct = Math.min(100, Math.round(defl * 100));
+      const pPct = Math.round(activePitch * 100);
+      const yPct = Math.round(activeYaw * 100);
+      const mx = currentVJoy.centerX + activeYaw * maxR;
+      const my = currentVJoy.centerY - activePitch * maxR * (currentVJoy.isInverted ? -1 : 1);
 
+      setVirtualJoystick((prev) => ({
+        ...prev,
+        mouseX: mx,
+        mouseY: my,
+        pitchInput: activePitch,
+        yawInput: activeYaw,
+        pitchPercent: pPct,
+        yawPercent: yPct,
+        deflectionPercent: deflPct,
+      }));
+
+      // Trigger buttons if flight stick controls are active
+      if (currentMode !== 'keyboard_mouse') {
         // Toggle decoupled (rising edge trigger)
         if (stick.toggleDecoupled && !lastStickButtonsRef.current.toggleDecoupled) {
           setPhysicsState((prev) => ({
@@ -1574,16 +1631,22 @@ export default function App() {
           className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full cursor-pointer transition-colors border ${
             inputDeviceMode === 'flight_stick'
               ? 'bg-cyan-950/70 border-cyan-500/60 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
+              : inputDeviceMode === 'hosam'
+              ? 'bg-purple-950/70 border-purple-500/60 text-purple-300 shadow-[0_0_10px_rgba(168,85,247,0.3)]'
               : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
           }`}
           title="Configure Keyboard, Mouse & Flight Stick Peripherals"
         >
           {inputDeviceMode === 'flight_stick' ? (
             <Gamepad className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+          ) : inputDeviceMode === 'hosam' ? (
+            <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
           ) : (
             <Keyboard className="w-3.5 h-3.5 text-cyan-400" />
           )}
-          <span>Controls ({inputDeviceMode === 'flight_stick' ? 'STICK' : 'KBM'})</span>
+          <span>
+            Controls ({inputDeviceMode === 'flight_stick' ? 'STICK' : inputDeviceMode === 'hosam' ? 'HOSAM' : 'KBM'})
+          </span>
         </button>
 
         {/* Multiplayer Status Indicator */}

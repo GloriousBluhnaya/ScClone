@@ -63,7 +63,12 @@ export const FlightStickSetup: React.FC<FlightStickSetupProps> = ({
             const delta = Math.abs(currentVal - initVal);
             if (delta > 0.45 && Math.abs(currentVal) > 0.4) {
               // Detected significant movement on this axis!
-              const stickSlot = gp.index === config.secondaryDeviceIndex ? 1 : 0;
+              let stickSlot = 0;
+              if (gp.index === config.pedalsDeviceIndex) {
+                stickSlot = 2;
+              } else if (gp.index === config.secondaryDeviceIndex) {
+                stickSlot = 1;
+              }
               const updated = {
                 ...config,
                 axes: {
@@ -89,7 +94,12 @@ export const FlightStickSetup: React.FC<FlightStickSetupProps> = ({
         for (const gp of gps) {
           for (let b = 0; b < gp.buttonsPressed.length; b++) {
             if (gp.buttonsPressed[b]) {
-              const stickSlot = gp.index === config.secondaryDeviceIndex ? 1 : 0;
+              let stickSlot = 0;
+              if (gp.index === config.pedalsDeviceIndex) {
+                stickSlot = 2;
+              } else if (gp.index === config.secondaryDeviceIndex) {
+                stickSlot = 1;
+              }
               const updated = {
                 ...config,
                 buttons: {
@@ -166,10 +176,14 @@ export const FlightStickSetup: React.FC<FlightStickSetupProps> = ({
 
   // Helper to get live processed value for an axis
   const getLiveAxisValue = (axisCfg: FlightStickAxisConfig): { raw: number; processed: number } => {
-    const gp =
-      axisCfg.stickIndex === 1
-        ? detectedGamepads.find((g) => g.index === config.secondaryDeviceIndex) || detectedGamepads[1]
-        : detectedGamepads.find((g) => g.index === config.primaryDeviceIndex) || detectedGamepads[0];
+    let gp = null;
+    if (axisCfg.stickIndex === 2) {
+      gp = detectedGamepads.find((g) => g.index === config.pedalsDeviceIndex) || detectedGamepads[2];
+    } else if (axisCfg.stickIndex === 1) {
+      gp = detectedGamepads.find((g) => g.index === config.secondaryDeviceIndex) || detectedGamepads[1];
+    } else {
+      gp = detectedGamepads.find((g) => g.index === config.primaryDeviceIndex) || detectedGamepads[0];
+    }
 
     if (!gp || axisCfg.axisIndex < 0 || axisCfg.axisIndex >= gp.axesValues.length) {
       return { raw: 0, processed: 0 };
@@ -203,37 +217,57 @@ export const FlightStickSetup: React.FC<FlightStickSetupProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-slate-400">Primary Stick:</span>
-            <select
-              value={config.primaryDeviceIndex}
-              onChange={(e) => onUpdateConfig({ ...config, primaryDeviceIndex: Number(e.target.value) })}
-              className="bg-slate-900 border border-slate-700 text-cyan-300 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-cyan-500"
-            >
-              {detectedGamepads.length === 0 ? (
-                <option value="0">Auto (Device #1)</option>
-              ) : (
-                detectedGamepads.map((gp) => (
-                  <option key={gp.index} value={gp.index}>
-                    [{gp.index}] {gp.id.slice(0, 32)}
-                  </option>
-                ))
-              )}
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-slate-400">Primary Stick:</span>
+              <select
+                value={config.primaryDeviceIndex}
+                onChange={(e) => onUpdateConfig({ ...config, primaryDeviceIndex: Number(e.target.value) })}
+                className="bg-slate-900 border border-slate-700 text-cyan-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-500"
+              >
+                {detectedGamepads.length === 0 ? (
+                  <option value="0">Auto (Device #1)</option>
+                ) : (
+                  detectedGamepads.map((gp) => (
+                    <option key={gp.index} value={gp.index}>
+                      [{gp.index}] {gp.id.slice(0, 20)}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
 
-            <span className="text-[11px] text-slate-400 ml-2">Secondary/Throttle:</span>
-            <select
-              value={config.secondaryDeviceIndex}
-              onChange={(e) => onUpdateConfig({ ...config, secondaryDeviceIndex: Number(e.target.value) })}
-              className="bg-slate-900 border border-slate-700 text-cyan-300 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-cyan-500"
-            >
-              <option value="-1">None (Single Stick)</option>
-              {detectedGamepads.map((gp) => (
-                <option key={gp.index} value={gp.index}>
-                  [{gp.index}] {gp.id.slice(0, 32)}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-slate-400">Secondary Stick:</span>
+              <select
+                value={config.secondaryDeviceIndex}
+                onChange={(e) => onUpdateConfig({ ...config, secondaryDeviceIndex: Number(e.target.value) })}
+                className="bg-slate-900 border border-slate-700 text-cyan-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-500"
+              >
+                <option value="-1">None</option>
+                {detectedGamepads.map((gp) => (
+                  <option key={gp.index} value={gp.index}>
+                    [{gp.index}] {gp.id.slice(0, 20)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-slate-400">Pedals:</span>
+              <select
+                value={config.pedalsDeviceIndex}
+                onChange={(e) => onUpdateConfig({ ...config, pedalsDeviceIndex: Number(e.target.value) })}
+                className="bg-slate-900 border border-slate-700 text-cyan-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-cyan-500"
+              >
+                <option value="-1">None</option>
+                {detectedGamepads.map((gp) => (
+                  <option key={gp.index} value={gp.index}>
+                    [{gp.index}] {gp.id.slice(0, 20)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -258,12 +292,29 @@ export const FlightStickSetup: React.FC<FlightStickSetupProps> = ({
                     ? 'bg-cyan-950/30 border-cyan-500/40 text-cyan-200'
                     : gp.index === config.secondaryDeviceIndex
                     ? 'bg-purple-950/30 border-purple-500/40 text-purple-200'
+                    : gp.index === config.pedalsDeviceIndex
+                    ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
                     : 'bg-slate-900 border-slate-800 text-slate-300'
                 }`}
               >
                 <div className="truncate pr-2">
                   <span className="font-mono font-bold mr-1.5 text-cyan-400">#{gp.index}</span>
                   <span className="font-medium text-white">{gp.id}</span>
+                  {gp.index === config.primaryDeviceIndex && (
+                    <span className="ml-2 text-[9px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                      Stick 1
+                    </span>
+                  )}
+                  {gp.index === config.secondaryDeviceIndex && (
+                    <span className="ml-2 text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                      Stick 2
+                    </span>
+                  )}
+                  {gp.index === config.pedalsDeviceIndex && (
+                    <span className="ml-2 text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-mono font-bold uppercase">
+                      Pedals
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] font-mono text-slate-400 shrink-0">
                   {gp.axesCount} Axes • {gp.buttonsCount} Buttons
@@ -381,6 +432,16 @@ export const FlightStickSetup: React.FC<FlightStickSetupProps> = ({
                     >
                       {isDetecting ? 'Move Axis...' : 'Auto-Detect'}
                     </button>
+
+                    <select
+                      value={axisCfg.stickIndex}
+                      onChange={(e) => handleUpdateAxis(key, { stickIndex: Number(e.target.value) })}
+                      className="bg-slate-950 border border-slate-700 text-cyan-300 text-[11px] rounded px-1 py-0.5"
+                    >
+                      <option value="0">Stick 1</option>
+                      <option value="1">Stick 2</option>
+                      <option value="2">Pedals</option>
+                    </select>
 
                     <select
                       value={axisCfg.axisIndex}
@@ -555,6 +616,27 @@ export const FlightStickSetup: React.FC<FlightStickSetupProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <select
+                    value={btnCfg.stickIndex}
+                    onChange={(e) => {
+                      const updated = {
+                        ...config,
+                        buttons: {
+                          ...config.buttons,
+                          [key]: {
+                            ...btnCfg,
+                            stickIndex: Number(e.target.value),
+                          },
+                        },
+                      };
+                      onUpdateConfig(updated);
+                    }}
+                    className="bg-slate-950 border border-slate-700 text-cyan-300 text-[11px] rounded px-1 py-0.5"
+                  >
+                    <option value="0">Stick 1</option>
+                    <option value="1">Stick 2</option>
+                    <option value="2">Pedals</option>
+                  </select>
                   <span className="font-mono text-xs text-cyan-300 font-bold bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
                     {btnCfg.buttonIndex >= 0 ? `Button ${btnCfg.buttonIndex}` : 'None'}
                   </span>
