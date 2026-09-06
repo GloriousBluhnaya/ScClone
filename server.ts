@@ -209,7 +209,7 @@ wss.on("connection", (ws: WebSocket, req) => {
       if (data.type === "ping") {
         ws.send(JSON.stringify({ type: "pong", t: data.t }));
       } else if (data.type === "player:update") {
-        const ship = room.ships[slot];
+        const ship = (data.playerId && room.ships.find((s) => s.id === data.playerId)) || room.ships[slot];
         if (ship) {
           ship.position = parseVector3(data.position, ship.position);
           ship.velocity = parseVector3(data.velocity, ship.velocity);
@@ -218,6 +218,7 @@ wss.on("connection", (ws: WebSocket, req) => {
           ship.throttle = typeof data.throttle === "number" ? data.throttle : ship.throttle;
           ship.boost = Boolean(data.boost);
           ship.decoupled = Boolean(data.decoupled);
+          ship.isControlled = true;
 
           // Instant zero-wait packet relay to opponents in same room
           broadcastToRoom(room, {
@@ -253,7 +254,7 @@ wss.on("connection", (ws: WebSocket, req) => {
       } else if (data.type === "combat:hit") {
         const targetShip = room.ships.find((s) => s.id === data.targetId);
         if (targetShip) {
-          const damage = typeof data.damage === "number" ? data.damage : 15;
+          const damage = typeof data.damage === "number" ? data.damage : 10;
           let remaining = damage;
 
           if (targetShip.shield > 0) {
@@ -317,6 +318,10 @@ wss.on("connection", (ws: WebSocket, req) => {
   ws.on("close", () => {
     room.clients.delete(playerId);
     assignedShip.isControlled = false;
+    broadcastToRoom(room, {
+      type: "player:left",
+      playerId,
+    });
     broadcastToRoom(room, {
       type: "arena:snapshot",
       ships: room.ships,

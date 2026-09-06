@@ -118,6 +118,7 @@ export interface RemoteShip {
   score: number;
   targetId: string | null;
   ready?: boolean;
+  isControlled?: boolean;
 }
 
 export interface DuelRoomState {

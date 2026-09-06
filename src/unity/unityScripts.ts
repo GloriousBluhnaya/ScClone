@@ -542,7 +542,7 @@ public class SpaceshipWeaponSystem : MonoBehaviour
     public float muzzleSpeed = 1250f; // m/s
     public float fireRate = 8f;       // rounds per second
     public float weaponRange = 3000f; // 3 km max projectile lifetime
-    public float damage = 20f;
+    public float damage = 10f; // 10 HP per bullet
 
     private Rigidbody shipRigidbody;
     private float nextFireTime;

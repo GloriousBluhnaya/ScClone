@@ -11,6 +11,7 @@ import { CockpitHUD } from './components/CockpitHUD';
 import { UnityCodeStudio } from './components/UnityCodeStudio';
 import { FlightControlsGuide } from './components/FlightControlsGuide';
 import { DedicatedServerModal } from './components/DedicatedServerModal';
+import { RoomLobbyModal } from './components/RoomLobbyModal';
 import { sounds } from './audio/soundFX';
 import {
   ShipPhysicsState,
@@ -81,27 +82,20 @@ export default function App() {
   const mouseStick = useRef({ x: 0, y: 0 });
   const isPointerLocked = useRef(false);
 
-  // Targets & 2-Ship Multiplayer State
-  const [remoteShips, setRemoteShips] = useState<RemoteShip[]>([
-    {
-      id: 'ship-2',
-      callsign: 'GLADIUS-BRAVO (P2)',
-      isAI: false,
-      position: { x: 200, y: 0, z: -400 },
-      velocity: { x: 0, y: 0, z: 0 },
-      rotation: { x: 0, y: -0.7071, z: 0, w: 0.7071 },
-      angularVelocity: { x: 0, y: 0, z: 0 },
-      hull: 120,
-      maxHull: 120,
-      shield: 200,
-      maxShield: 200,
-      lastHit: 0,
-      score: 0,
-      targetId: null,
-    },
-  ]);
+  // Targets & 2-Ship Multiplayer State (empty until opponent joins or AI is spawned)
+  const [remoteShips, setRemoteShips] = useState<RemoteShip[]>([]);
   const remoteShipsRef = useRef(remoteShips);
   remoteShipsRef.current = remoteShips;
+
+  // Active Room ID & Matchmaking Lobby State
+  const [currentRoomId, setCurrentRoomId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get('room') || 'duel-' + Math.random().toString(36).substring(2, 8);
+    }
+    return 'duel-arena';
+  });
+  const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
 
   const [connectedPilotsCount, setConnectedPilotsCount] = useState(1);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -342,23 +336,48 @@ export default function App() {
     saveFlightStickConfig(defaults);
   }, []);
 
-  const handleCopyLink = useCallback(() => {
+  const handleSwitchRoom = useCallback((newRoomId: string) => {
+    const cleaned = newRoomId.trim();
+    if (!cleaned) return;
+    setCurrentRoomId(cleaned);
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set('room', cleaned);
+    window.history.replaceState({}, '', newUrl.toString());
+    setRemoteShips([]);
+    setConnectedPilotsCount(1);
+    setCombatLog((prev) => [`Switched to room [${cleaned}]. Waiting for pilots...`, ...prev.slice(0, 15)]);
+  }, []);
+
+  const handleCopyLink = useCallback(async () => {
     if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      let roomId = urlParams.get('room');
-      if (!roomId) {
-        roomId = 'duel-' + Math.random().toString(36).substring(2, 8);
-      }
       const shareUrl = new URL(window.location.origin + window.location.pathname);
-      shareUrl.searchParams.set('room', roomId);
+      shareUrl.searchParams.set('room', currentRoomId);
       if (customServerUrl && customServerUrl.trim().length > 0) {
         shareUrl.searchParams.set('server', customServerUrl.trim());
       }
-      navigator.clipboard.writeText(shareUrl.toString());
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
+      const urlString = shareUrl.toString();
+      try {
+        await navigator.clipboard.writeText(urlString);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+      } catch {
+        const textArea = document.createElement('textarea');
+        textArea.value = urlString;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setCopiedLink(true);
+          setTimeout(() => setCopiedLink(false), 2000);
+        } catch {
+          prompt('Copy this 1v1 duel link:', urlString);
+        }
+        document.body.removeChild(textArea);
+      }
     }
-  }, [customServerUrl]);
+  }, [customServerUrl, currentRoomId]);
 
   const handleUpdateKeybindings = useCallback((newBindings: KeyBindingsMap) => {
     setKeybindings(newBindings);
@@ -399,7 +418,6 @@ export default function App() {
   // 1. WEBSOCKET MULTIPLAYER SETUP
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    let roomId = urlParams.get('room');
     const serverParam = urlParams.get('server');
 
     if (serverParam && serverParam.trim().length > 0) {
@@ -415,10 +433,7 @@ export default function App() {
       '';
 
     const effectiveCustomServer = serverParam?.trim() || customServerUrl?.trim() || configuredServer;
-
-    if (!roomId) {
-      roomId = 'duel-' + Math.random().toString(36).substring(2, 8);
-    }
+    const roomId = currentRoomId;
 
     const newUrl = new URL(window.location.href);
     newUrl.searchParams.set('room', roomId);
@@ -442,7 +457,7 @@ export default function App() {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setCombatLog((prev) => ['Connected to 1v1 Space Duel Arena...', ...prev.slice(0, 15)]);
+      setCombatLog((prev) => [`Connected to duel arena [${roomId}]...`, ...prev.slice(0, 15)]);
     };
 
     ws.onmessage = (event) => {
@@ -483,7 +498,7 @@ export default function App() {
             const activeLocalId = msg.playerId || localPlayerIdRef.current;
             const normalized = msg.ships
               .map(normalizeShip)
-              .filter((s: RemoteShip) => s.id !== activeLocalId);
+              .filter((s: RemoteShip) => s.id !== activeLocalId && (s.isControlled || s.isAI));
             setRemoteShips(normalized);
             setConnectedPilotsCount(msg.ships.filter((s: any) => s.isControlled).length || 1);
           }
@@ -497,16 +512,36 @@ export default function App() {
                 updated[idx] = { ...updated[idx], ...normShip };
                 return updated;
               }
-              return [...prev, normShip];
+              if (normShip.isControlled || normShip.isAI) {
+                return [...prev, normShip];
+              }
+              return prev;
             });
           }
         } else if (msg.type === 'arena:snapshot') {
           if (msg.ships) {
-            const normalized = msg.ships
+            const activeLocalId = localPlayerIdRef.current;
+            const filtered = msg.ships
               .map(normalizeShip)
-              .filter((s: RemoteShip) => s.id !== localPlayerIdRef.current);
-            setRemoteShips(normalized);
-            setConnectedPilotsCount(msg.ships.filter((s: any) => s.isControlled).length || 1);
+              .filter((s: RemoteShip) => s.id !== activeLocalId && (s.isControlled || s.isAI));
+
+            setRemoteShips((prev) => {
+              return filtered.map((snapShip) => {
+                const existing = prev.find((p) => p.id === snapShip.id);
+                if (existing) {
+                  return {
+                    ...snapShip,
+                    position: existing.position,
+                    velocity: existing.velocity,
+                    rotation: existing.rotation,
+                    angularVelocity: existing.angularVelocity,
+                  };
+                }
+                return snapShip;
+              });
+            });
+            const controlledCount = msg.ships.filter((s: any) => s.isControlled).length || 1;
+            setConnectedPilotsCount(controlledCount);
           }
         } else if (msg.type === 'weapon:fired') {
           if (msg.laser && msg.laser.shooterId !== localPlayerIdRef.current) {
@@ -571,7 +606,8 @@ export default function App() {
           setPing(rtt);
         } else if (msg.type === 'player:left') {
           setRemoteShips((prev) => prev.filter((s) => s.id !== msg.playerId));
-          setCombatLog((prev) => ['Opponent disconnected from lobby', ...prev.slice(0, 15)]);
+          setConnectedPilotsCount((prev) => Math.max(1, prev - 1));
+          setCombatLog((prev) => ['Opponent left the duel arena', ...prev.slice(0, 15)]);
         }
       } catch (err) {
         console.error('WS message parse error:', err);
@@ -589,7 +625,7 @@ export default function App() {
       clearInterval(pingInterval);
       ws.close();
     };
-  }, []);
+  }, [customServerUrl, currentRoomId]);
 
   // Periodic network state sync to server (45Hz high-frequency telemetry)
   useEffect(() => {
@@ -599,6 +635,7 @@ export default function App() {
         wsRef.current.send(
           JSON.stringify({
             type: 'player:update',
+            playerId: localPlayerIdRef.current,
             position: [p.position.x, p.position.y, p.position.z],
             velocity: [p.velocity.x, p.velocity.y, p.velocity.z],
             rotation: [p.rotation.x, p.rotation.y, p.rotation.z, p.rotation.w],
@@ -1375,7 +1412,7 @@ export default function App() {
                     type: 'combat:hit',
                     targetId: target.id,
                     hitPoint: [nextPos.x, nextPos.y, nextPos.z],
-                    damage: 15,
+                    damage: 10,
                   })
                 );
               } else {
@@ -1385,7 +1422,7 @@ export default function App() {
                     if (s.id === target.id) {
                       let sld = s.shield;
                       let hll = s.hull;
-                      const dmg = 15;
+                      const dmg = 10;
                       if (sld >= dmg) {
                         sld -= dmg;
                       } else {
@@ -1595,7 +1632,7 @@ export default function App() {
           hitConfirmed={hitConfirmed}
           score={score}
           ping={ping}
-          connectedPilotsCount={remoteShips.length + 1}
+          connectedPilotsCount={connectedPilotsCount}
           onToggleDecoupled={() =>
             setPhysicsState((prev) => ({
               ...prev,
@@ -1651,11 +1688,16 @@ export default function App() {
 
         {/* Multiplayer Status Indicator */}
         <div
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border transition-all ${
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsRoomModalOpen(true);
+          }}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border transition-all cursor-pointer hover:opacity-90 ${
             connectedPilotsCount >= 2
               ? 'bg-emerald-950/90 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
               : 'bg-amber-950/90 border-amber-500/60 text-amber-300'
           }`}
+          title="Click to view Room Lobby & Matchmaking status"
         >
           <span
             className={`w-2 h-2 rounded-full animate-pulse ${
@@ -1666,6 +1708,19 @@ export default function App() {
             {connectedPilotsCount >= 2 ? '2/2 PLAYERS CONNECTED' : '1/2 PLAYERS (AWAITING P2)'}
           </span>
         </div>
+
+        {/* Room / Lobby Switcher Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsRoomModalOpen(true);
+          }}
+          className="flex items-center gap-1.5 bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 text-xs font-mono font-bold px-3 py-1.5 rounded-full cursor-pointer transition-colors shadow-md"
+          title="Manage Multiplayer Room & Matchmaking"
+        >
+          <Users className="w-3.5 h-3.5 text-cyan-400" />
+          <span>ROOM: {currentRoomId}</span>
+        </button>
 
         {/* Dedicated Server Settings Button */}
         <button
@@ -1747,6 +1802,15 @@ export default function App() {
           }
         }}
         currentPing={ping}
+      />
+      <RoomLobbyModal
+        isOpen={isRoomModalOpen}
+        onClose={() => setIsRoomModalOpen(false)}
+        currentRoomId={currentRoomId}
+        onSwitchRoom={handleSwitchRoom}
+        connectedPilotsCount={connectedPilotsCount}
+        currentPing={ping}
+        customServerUrl={customServerUrl}
       />
     </div>
   );

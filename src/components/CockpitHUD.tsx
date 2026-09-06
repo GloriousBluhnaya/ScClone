@@ -496,7 +496,11 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
         <div className="flex items-center gap-3 bg-transparent border border-cyan-500/30 px-3 py-1.5 rounded-lg text-xs">
           <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
           <span className="text-slate-400">NETWORK ARENA:</span>
-          <span className="text-emerald-400 font-semibold">{connectedPilotsCount} PILOTS ONLINE</span>
+          {connectedPilotsCount >= 2 ? (
+            <span className="text-emerald-400 font-semibold">{connectedPilotsCount} PILOTS CONNECTED (1v1 ACTIVE)</span>
+          ) : (
+            <span className="text-amber-400 font-semibold">1 PILOT (AWAITING OPPONENT)</span>
+          )}
           <span className="text-slate-600">|</span>
           <span className="text-slate-400">PING:</span>
           <span className="text-cyan-300 font-mono">{ping}ms</span>

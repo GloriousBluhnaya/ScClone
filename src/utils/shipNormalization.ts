@@ -87,5 +87,6 @@ export function normalizeShip(raw: any): RemoteShip {
     score: typeof raw.score === 'number' ? raw.score : 0,
     targetId: raw.targetId ? String(raw.targetId) : null,
     ready: Boolean(raw.ready),
+    isControlled: Boolean(raw.isControlled),
   };
 }
