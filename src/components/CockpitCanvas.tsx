@@ -1328,6 +1328,9 @@ function createSpaceshipModel(isAI: boolean, callsign: string = ''): THREE.Group
     ship.add(plumeL);
   }
 
+  // Scale the entire ship model Group across the board by 30%
+  ship.scale.set(1.3, 1.3, 1.3);
+
   return ship;
 }
 

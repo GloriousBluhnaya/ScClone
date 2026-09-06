@@ -1252,9 +1252,9 @@ export default function App() {
             nextPos.z - p.position.z
           );
 
-          // Shield bubble is 4.5m, physical ship hull is 2.2m
+          // Shield bubble is 5.85m, physical ship hull is 2.86m (increased by 30% from 4.5m / 2.2m)
           const isPlayerShieldUp = playerShield > 0;
-          const playerHitboxRadius = isPlayerShieldUp ? 4.5 : 2.2;
+          const playerHitboxRadius = isPlayerShieldUp ? 5.85 : 2.86;
 
           if (distToPlayer < playerHitboxRadius) {
             // Local ship hit by remote / AI laser!
@@ -1344,9 +1344,9 @@ export default function App() {
               closestDistSq = Math.pow(target.position.x - proj.x, 2) + Math.pow(target.position.y - proj.y, 2) + Math.pow(target.position.z - proj.z, 2);
             }
 
-            // Symmetrical hitbox configuration: shield bubble is 4.5m, physical ship hull is 3.0m
+            // Symmetrical hitbox configuration: shield bubble is 5.85m, physical ship hull is 3.90m (increased by 30% from 4.5m / 3.0m)
             const isEnemyShieldUp = target.shield > 0;
-            const enemyHitboxRadius = isEnemyShieldUp ? 4.5 : 3.0;
+            const enemyHitboxRadius = isEnemyShieldUp ? 5.85 : 3.90;
 
             if (closestDistSq < enemyHitboxRadius * enemyHitboxRadius) {
               hit = true;
