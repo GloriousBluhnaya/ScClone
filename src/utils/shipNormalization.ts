@@ -47,10 +47,10 @@ export function normalizeShip(raw: any): RemoteShip {
       velocity: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
       angularVelocity: { x: 0, y: 0, z: 0 },
-      hull: 100,
-      maxHull: 100,
-      shield: 100,
-      maxShield: 100,
+      hull: 120,
+      maxHull: 120,
+      shield: 120,
+      maxShield: 120,
       lastHit: 0,
       boost: false,
       decoupled: false,
@@ -63,10 +63,10 @@ export function normalizeShip(raw: any): RemoteShip {
   const isAI = Boolean(raw.isAI ?? id.startsWith('ai-'));
   const callsign = String(raw.callsign || (isAI ? 'BANDIT [AI]' : 'PILOT'));
 
-  const hull = typeof raw.hull === 'number' && !isNaN(raw.hull) ? raw.hull : 100;
-  const maxHull = typeof raw.maxHull === 'number' && !isNaN(raw.maxHull) ? raw.maxHull : Math.max(hull, 100);
-  const shield = typeof raw.shield === 'number' && !isNaN(raw.shield) ? raw.shield : 100;
-  const maxShield = typeof raw.maxShield === 'number' && !isNaN(raw.maxShield) ? raw.maxShield : Math.max(shield, 100);
+  const hull = typeof raw.hull === 'number' && !isNaN(raw.hull) ? raw.hull : 120;
+  const maxHull = typeof raw.maxHull === 'number' && !isNaN(raw.maxHull) ? raw.maxHull : Math.max(hull, 120);
+  const shield = typeof raw.shield === 'number' && !isNaN(raw.shield) ? raw.shield : 120;
+  const maxShield = typeof raw.maxShield === 'number' && !isNaN(raw.maxShield) ? raw.maxShield : Math.max(shield, 120);
   const lastHit = typeof raw.lastHit === 'number' && !isNaN(raw.lastHit) ? raw.lastHit : 0;
 
   return {

@@ -100,10 +100,10 @@ function createDefaultShips(): [ShipState, ShipState] {
       throttle: 0,
       boost: false,
       decoupled: false,
-      hull: 100,
-      maxHull: 100,
-      shield: 100,
-      maxShield: 100,
+      hull: 120,
+      maxHull: 120,
+      shield: 120,
+      maxShield: 120,
       score: 0,
       lastHit: 0,
     },
@@ -119,10 +119,10 @@ function createDefaultShips(): [ShipState, ShipState] {
       throttle: 0,
       boost: false,
       decoupled: false,
-      hull: 100,
-      maxHull: 100,
-      shield: 100,
-      maxShield: 100,
+      hull: 120,
+      maxHull: 120,
+      shield: 120,
+      maxShield: 120,
       score: 0,
       lastHit: 0,
     },
@@ -307,7 +307,7 @@ wss.on("connection", (ws: WebSocket, req) => {
                 ship: targetShip,
                 ships: room.ships,
               });
-            }, 2500);
+            }, 5000);
           }
         }
       }

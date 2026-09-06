@@ -99,10 +99,10 @@ function createDefaultShips(): [ShipState, ShipState] {
       throttle: 0,
       boost: false,
       decoupled: false,
-      hull: 100,
-      maxHull: 100,
-      shield: 100,
-      maxShield: 100,
+      hull: 120,
+      maxHull: 120,
+      shield: 200,
+      maxShield: 200,
       score: 0,
       lastHit: 0,
     },
@@ -118,10 +118,10 @@ function createDefaultShips(): [ShipState, ShipState] {
       throttle: 0,
       boost: false,
       decoupled: false,
-      hull: 100,
-      maxHull: 100,
-      shield: 100,
-      maxShield: 100,
+      hull: 120,
+      maxHull: 120,
+      shield: 200,
+      maxShield: 200,
       score: 0,
       lastHit: 0,
     },
@@ -218,7 +218,6 @@ wss.on("connection", (ws: WebSocket, req) => {
           ship.throttle = typeof data.throttle === "number" ? data.throttle : ship.throttle;
           ship.boost = Boolean(data.boost);
           ship.decoupled = Boolean(data.decoupled);
-          ship.lastHit = Date.now();
 
           // Instant zero-wait packet relay to opponents in same room
           broadcastToRoom(room, {
@@ -332,8 +331,29 @@ wss.on("connection", (ws: WebSocket, req) => {
 // 25Hz Periodic arena snapshot sync per room
 setInterval(() => {
   if (rooms.size === 0) return;
+  const now = Date.now();
+  const dt = 0.04; // 40ms interval
   rooms.forEach((room) => {
     if (room.clients.size === 0) return;
+
+    // Server-authoritative shield recharge loop for connected players & AIs
+    room.ships.forEach((s) => {
+      if (s.hull > 0 && s.shield < 200) {
+        const timeSinceLastHit = now - s.lastHit;
+        if (s.shield > 0) {
+          // Still has shields: recharge after 3 seconds at 20HP per second
+          if (timeSinceLastHit > 3000) {
+            s.shield = Math.min(200, s.shield + 20 * dt);
+          }
+        } else {
+          // Shields are fully down: recharge after 5 seconds at 20HP per second
+          if (timeSinceLastHit > 5000) {
+            s.shield = Math.min(200, s.shield + 20 * dt);
+          }
+        }
+      }
+    });
+
     broadcastToRoom(room, {
       type: "arena:snapshot",
       ships: room.ships,

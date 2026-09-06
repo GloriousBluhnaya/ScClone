@@ -11,6 +11,8 @@ interface CockpitHUDProps {
   virtualJoystick: VirtualJoystickState;
   playerHull: number;
   playerShield: number;
+  playerIsDead?: boolean;
+  respawnCountdown?: number;
   weaponCapacitor: number;
   hitConfirmed: boolean;
   score: number;
@@ -30,6 +32,8 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
   virtualJoystick,
   playerHull,
   playerShield,
+  playerIsDead,
+  respawnCountdown,
   weaponCapacitor,
   hitConfirmed,
   score,
@@ -207,7 +211,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
           </div>
 
           {/* Floating Telemetry Box Next to Pip */}
-          <div className="absolute left-6 -top-3 whitespace-nowrap bg-slate-950/90 border border-slate-700/80 px-2 py-1 rounded-md text-[10px] font-mono shadow-xl flex flex-col gap-0.5">
+          <div className="absolute left-6 -top-3 whitespace-nowrap bg-transparent border border-slate-700/40 px-2 py-1 rounded-md text-[10px] font-mono shadow-xl flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <span className="text-slate-400">STICK:</span>
               <span className="font-bold font-mono" style={{ color: vectorColor }}>
@@ -246,12 +250,12 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
               <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-amber-400" />
 
               {/* Target Data Tag */}
-              <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-slate-900/80 px-1.5 py-0.5 rounded text-[10px] tracking-wider text-amber-400 border border-amber-400/30">
+              <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-transparent px-1.5 py-0.5 rounded text-[10px] tracking-wider text-amber-400 border border-amber-400/30">
                 {targetInfo.callsign}
               </div>
 
               {/* Target Shield & Hull Bars */}
-              <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-20 flex flex-col gap-0.5 bg-slate-900/80 p-1 rounded border border-slate-700/60">
+              <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 w-20 flex flex-col gap-0.5 bg-transparent p-1 rounded border border-slate-700/60">
                 <div className="flex items-center justify-between text-[9px] text-cyan-300">
                   <span>SHD</span>
                   <span>{Math.round(targetInfo.shieldPercent)}%</span>
@@ -306,13 +310,13 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
                   top: `${targetInfo.leadScreenPos.y}px`,
                 }}
               >
-                <div className="relative w-8 h-8 flex items-center justify-center">
+                <div className="relative w-5 h-5 flex items-center justify-center">
                   {/* Outer Diamond */}
-                  <div className="w-6 h-6 border border-cyan-300 rotate-45 shadow-[0_0_8px_rgba(56,189,248,0.5)] flex items-center justify-center">
+                  <div className="w-3.5 h-3.5 border border-cyan-300 rotate-45 shadow-[0_0_4px_rgba(56,189,248,0.5)] flex items-center justify-center">
                     {/* Inner Pip */}
-                    <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
+                    <div className="w-1 h-1 bg-red-400 rounded-full animate-pulse" />
                   </div>
-                  <span className="absolute -top-4 text-[9px] font-mono tracking-widest text-cyan-300 uppercase">
+                  <span className="absolute -top-3.5 text-[8px] font-mono tracking-widest text-cyan-300/80 uppercase">
                     PIP
                   </span>
                 </div>
@@ -320,6 +324,44 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
             </>
           )}
         </>
+      )}
+
+      {/* 3.4. OFF-SCREEN TARGET INDICATOR */}
+      {targetInfo && targetInfo.offScreen && !targetInfo.offScreen.isOnScreen && (
+        <div
+          className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30"
+          style={{
+            left: `${targetInfo.offScreen.edgeX}px`,
+            top: `${targetInfo.offScreen.edgeY}px`,
+          }}
+        >
+          <div className="relative flex flex-col items-center justify-center">
+            {/* Flashing target locked guiding arrow */}
+            <div
+              className="w-10 h-10 flex items-center justify-center animate-pulse"
+              style={{ transform: `rotate(${targetInfo.offScreen.edgeAngle}rad)` }}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" className="filter drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">
+                <polygon points="22,12 8,4 12,12 8,20" fill="#f59e0b" stroke="#ef4444" strokeWidth="1.5" />
+              </svg>
+            </div>
+
+            {/* Floating telemetry tag for off-screen target */}
+            <div className="absolute top-8 whitespace-nowrap bg-transparent border border-red-500/80 px-2 py-1 rounded-md text-[10px] font-mono text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.3)] flex flex-col items-center gap-0.5">
+              <span className="font-extrabold text-amber-400 tracking-wider flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+                {targetInfo.callsign}
+              </span>
+              <div className="flex items-center gap-2 text-[9px] text-slate-300">
+                <span className="font-bold text-red-400">{Math.round(targetInfo.distance)}m</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-cyan-400">{Math.round(targetInfo.shieldPercent)}% SHD</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-emerald-400 font-bold">{targetInfo.offScreen.offNoseDegrees}° OFF-NOSE</span>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 3.5. TOTAL VECTOR INDICATOR (TVI) & ANTI-TVI RETICLES */}
@@ -362,7 +404,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
                 </svg>
 
                 {/* TVI Telemetry Data Tag */}
-                <div className="absolute top-9 whitespace-nowrap bg-slate-950/90 border border-cyan-500/60 px-1.5 py-0.5 rounded text-[9px] font-mono tracking-wider text-cyan-300 shadow-lg flex items-center gap-1">
+                <div className="absolute top-9 whitespace-nowrap bg-transparent border border-cyan-500/60 px-1.5 py-0.5 rounded text-[9px] font-mono tracking-wider text-cyan-300 shadow-lg flex items-center gap-1">
                   <span className="font-bold text-cyan-400">TVI</span>
                   <span className="text-white">{Math.round(tviInfo.speed)}M/S</span>
                   {tviInfo.driftAngleDeg >= 2 && (
@@ -393,7 +435,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
                   </svg>
                 </div>
                 {/* Off-screen TVI label */}
-                <div className="absolute top-6 whitespace-nowrap bg-slate-950/90 border border-cyan-400/60 px-1.5 py-0.5 rounded text-[9px] font-mono text-cyan-300 shadow-xl flex items-center gap-1">
+                <div className="absolute top-6 whitespace-nowrap bg-transparent border border-cyan-400/60 px-1.5 py-0.5 rounded text-[9px] font-mono text-cyan-300 shadow-xl flex items-center gap-1">
                   <span className="font-bold text-cyan-400">TVI</span>
                   <span className="text-amber-400 font-semibold">{tviInfo.driftAngleDeg}° DRIFT</span>
                 </div>
@@ -439,7 +481,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
                 </svg>
 
                 {/* ATVI Telemetry Tag */}
-                <div className="absolute top-9 whitespace-nowrap bg-slate-950/90 border border-amber-500/60 px-1.5 py-0.5 rounded text-[9px] font-mono tracking-wider text-amber-300 shadow-lg flex items-center gap-1">
+                <div className="absolute top-9 whitespace-nowrap bg-transparent border border-amber-500/60 px-1.5 py-0.5 rounded text-[9px] font-mono tracking-wider text-amber-300 shadow-lg flex items-center gap-1">
                   <span className="font-bold text-amber-400">ATVI</span>
                   <span className="text-slate-300">RETRO</span>
                 </div>
@@ -451,7 +493,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
 
       {/* 4. TOP STATUS BAR: SENSORS & ARENA STATUS */}
       <div className="absolute top-4 left-6 right-6 flex items-center justify-between pointer-events-auto">
-        <div className="flex items-center gap-3 bg-slate-900/80 backdrop-blur border border-cyan-500/30 px-3 py-1.5 rounded-lg text-xs">
+        <div className="flex items-center gap-3 bg-transparent border border-cyan-500/30 px-3 py-1.5 rounded-lg text-xs">
           <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
           <span className="text-slate-400">NETWORK ARENA:</span>
           <span className="text-emerald-400 font-semibold">{connectedPilotsCount} PILOTS ONLINE</span>
@@ -461,14 +503,14 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
         </div>
 
         {/* Center Compass / Heading */}
-        <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur border border-cyan-500/30 px-4 py-1 rounded-lg text-xs tracking-widest">
+        <div className="flex items-center gap-2 bg-transparent border border-cyan-500/30 px-4 py-1 rounded-lg text-xs tracking-widest">
           <Compass className="w-4 h-4 text-cyan-400" />
           <span className="text-slate-300">350° NNE // DEEP SPACE ARENA</span>
         </div>
 
         {/* Score & Target Cycle Button */}
         <div className="flex items-center gap-3">
-          <div className="bg-slate-900/80 backdrop-blur border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs">
+          <div className="bg-transparent border border-amber-500/30 px-3 py-1.5 rounded-lg text-xs">
             <span className="text-slate-400 mr-2">COMBAT SCORE:</span>
             <span className="text-amber-400 font-mono font-bold text-sm">{score}</span>
           </div>
@@ -485,7 +527,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
       </div>
 
       {/* 5. LEFT MFD: THROTTLE, SPEEDOMETER & V-JOYSTICK CONTROLS */}
-      <div className="absolute bottom-8 left-8 bg-slate-950/85 backdrop-blur border border-cyan-500/30 p-4 rounded-xl w-60 flex flex-col gap-2.5 shadow-xl">
+      <div className="absolute bottom-8 left-8 bg-transparent border border-cyan-500/30 p-4 rounded-xl w-60 flex flex-col gap-2.5 shadow-xl">
         <div className="flex items-center justify-between text-xs tracking-wider border-b border-cyan-500/20 pb-1 text-slate-400">
           <span>VELOCITY & SCM</span>
           <span className="text-cyan-400 font-mono">6-DoF</span>
@@ -606,7 +648,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
       </div>
 
       {/* 6. RIGHT MFD: SHIELD & HULL INTEGRITY */}
-      <div className="absolute bottom-8 right-8 bg-slate-950/85 backdrop-blur border border-cyan-500/30 p-4 rounded-xl w-60 flex flex-col gap-2.5 shadow-xl">
+      <div className="absolute bottom-8 right-8 bg-transparent border border-cyan-500/30 p-4 rounded-xl w-60 flex flex-col gap-2.5 shadow-xl">
         <div className="flex items-center justify-between text-xs tracking-wider border-b border-cyan-500/20 pb-1 text-slate-400">
           <span>DEFENSE & WEAPONS</span>
           <Shield className="w-3.5 h-3.5 text-cyan-400" />
@@ -616,12 +658,14 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
         <div>
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-cyan-400">SHIELDS</span>
-            <span className="font-mono text-cyan-300">{Math.round(playerShield)}%</span>
+            <span className="font-mono text-cyan-300">
+              {Math.min(100, Math.max(0, Math.round((playerShield / 200) * 100)))}% ({Math.round(playerShield)}/200 HP)
+            </span>
           </div>
           <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
             <div
               className="h-full bg-cyan-400 transition-all duration-150"
-              style={{ width: `${playerShield}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, (playerShield / 200) * 100))}%` }}
             />
           </div>
         </div>
@@ -630,12 +674,14 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
         <div>
           <div className="flex items-center justify-between text-xs mb-1">
             <span className="text-red-400">HULL INTEGRITY</span>
-            <span className="font-mono text-red-300">{Math.round(playerHull)}%</span>
+            <span className="font-mono text-red-300">
+              {Math.min(100, Math.max(0, Math.round((playerHull / 120) * 100)))}% ({Math.round(playerHull)}/120 HP)
+            </span>
           </div>
           <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
             <div
               className="h-full bg-red-500 transition-all duration-150"
-              style={{ width: `${playerHull}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, (playerHull / 120) * 100))}%` }}
             />
           </div>
         </div>
@@ -685,6 +731,37 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 7. SHIP DESTRUCTION & 5-SECOND RESPAWN OVERLAY */}
+      {(playerIsDead || playerHull <= 0) && (
+        <div className="absolute inset-0 bg-red-950/60 backdrop-blur-md z-50 flex flex-col items-center justify-center text-center p-6 animate-fade-in pointer-events-auto">
+          <div className="bg-slate-950/95 border-2 border-red-500 p-8 rounded-2xl max-w-lg shadow-[0_0_80px_rgba(239,68,68,0.6)] flex flex-col items-center gap-5">
+            <div className="w-20 h-20 rounded-full bg-red-500/20 border-2 border-red-500 flex items-center justify-center animate-pulse shadow-[0_0_30px_rgba(239,68,68,0.4)]">
+              <AlertTriangle className="w-10 h-10 text-red-500" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-extrabold tracking-widest text-red-500 uppercase font-mono">
+                CRITICAL SYSTEM FAILURE
+              </h2>
+              <p className="text-slate-300 text-sm mt-1 tracking-wider font-mono">
+                HULL INTEGRITY COMPROMISED // SHIP DESTROYED
+              </p>
+            </div>
+            <div className="w-full bg-slate-900 border border-red-500/50 py-4 px-6 rounded-xl flex items-center justify-between shadow-inner">
+              <span className="text-xs text-slate-400 font-mono tracking-widest">EMERGENCY RESPAWN:</span>
+              <span className="text-3xl font-bold font-mono text-amber-400 animate-pulse">
+                {respawnCountdown && respawnCountdown > 0 ? `${respawnCountdown} SECONDS` : 'RE-DEPLOYING...'}
+              </span>
+            </div>
+            <div className="w-full bg-slate-800/80 h-2 rounded-full overflow-hidden border border-slate-700">
+              <div
+                className="h-full bg-gradient-to-r from-red-500 to-amber-400 transition-all duration-1000"
+                style={{ width: `${((respawnCountdown || 0) / 5) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

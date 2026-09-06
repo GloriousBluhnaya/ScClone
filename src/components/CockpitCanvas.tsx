@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { ShipPhysicsState, TargetInfo, LaserBolt, ExplosionEffect, RemoteShip, TVIInfo, TVIMarker } from '../types';
 import { normalizeVector3D, normalizeQuaternionD } from '../utils/shipNormalization';
+import skyboxTextureUrl from '../assets/images/space_skybox_nebula_1788663162004.jpg';
 
 interface CockpitCanvasProps {
   physicsState: ShipPhysicsState;
@@ -44,6 +45,9 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
   const laserMeshGroup = useRef<THREE.Group | null>(null);
   const explosionGroup = useRef<THREE.Group | null>(null);
 
+  // Active explosion / shield impact meshes tracked frame-by-frame
+  const activeExplosionMeshes = useRef<Map<string, { mesh: THREE.Mesh; geo: THREE.BufferGeometry; mat: THREE.MeshBasicMaterial; startTime: number; duration: number; scale: number }>>(new Map());
+
   // Holographic 3D radar refs
   const radarGroupRef = useRef<THREE.Group | null>(null);
   const radarContactsRef = useRef<THREE.Group | null>(null);
@@ -61,6 +65,9 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
   const mouseStickRef = useRef(mouseVirtualStick);
   mouseStickRef.current = mouseVirtualStick;
 
+  const explosionsRef = useRef(explosions);
+  explosionsRef.current = explosions;
+
   const onLeadPipRef = useRef(onLeadPipCalculated);
   onLeadPipRef.current = onLeadPipCalculated;
 
@@ -75,7 +82,7 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
 
     // 1. SCENE SETUP
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x020617, 0.00035);
+    scene.fog = new THREE.FogExp2(0x0b1329, 0.0001); // Subtle deep blue-indigo space fog for maximum contrast
     sceneRef.current = scene;
 
     // 2. CAMERA SETUP
@@ -88,7 +95,7 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure = 1.3;
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.position = 'absolute';
     renderer.domElement.style.top = '0';
@@ -107,22 +114,88 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     camera.position.set(0, 0.35, -0.1);
     shipRoot.add(camera);
 
-    // 5. LIGHTING
-    const ambientLight = new THREE.AmbientLight(0x38bdf8, 0.45);
+    // 5. LIGHTING & ENVIRONMENT
+    // Bright key ambient lighting to illuminate ships & cockpit
+    const ambientLight = new THREE.AmbientLight(0x93c5fd, 0.85);
     scene.add(ambientLight);
 
-    const distantSun = new THREE.DirectionalLight(0xfff7ed, 2.2);
-    distantSun.position.set(5000, 3000, 4000);
+    // Primary Distant Sun with strong specular highlights
+    const distantSun = new THREE.DirectionalLight(0xfff7ed, 3.2);
+    distantSun.position.set(6000, 4000, 5000);
     scene.add(distantSun);
 
-    // Subtle blue cockpit instrument fill light
-    const cockpitLight = new THREE.PointLight(0x00f0ff, 1.2, 3);
-    cockpitLight.position.set(0, 0.2, 0.4);
+    // Secondary fill keylight (Cool Purple/Magenta contrast light)
+    const secondarySun = new THREE.DirectionalLight(0xa855f7, 1.8);
+    secondarySun.position.set(-6000, -3000, -4000);
+    scene.add(secondarySun);
+
+    // Cockpit instrument panel point light
+    const cockpitLight = new THREE.PointLight(0x38bdf8, 2.5, 4.5);
+    cockpitLight.position.set(0, 0.25, 0.3);
     shipRoot.add(cockpitLight);
 
-    // 6. DEEP SPACE ENVIRONMENT & ASTEROID FIELD
+    // Cockpit ceiling warm ambient interior light
+    const cockpitCeilingLight = new THREE.PointLight(0xffedd5, 1.2, 3.5);
+    cockpitCeilingLight.position.set(0, 0.75, -0.1);
+    shipRoot.add(cockpitCeilingLight);
+
+    // 6. DEEP SPACE ENVIRONMENT (SKYBOX, NEBULAE & ASTEROID FIELD)
+    // Load High-Contrast Space Skybox Texture
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.load(skyboxTextureUrl, (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      
+      const skyGeo = new THREE.SphereGeometry(20000, 64, 32);
+      const skyMat = new THREE.MeshBasicMaterial({
+        map: texture,
+        side: THREE.BackSide,
+        depthWrite: false,
+      });
+      const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+      scene.add(skyMesh);
+    });
+
+    // Volumetric Cosmic Nebula Cloud Planes
+    const nebulaGroup = new THREE.Group();
+    const nebulaColors = [0x00f0ff, 0xec4899, 0xa855f7, 0x38bdf8, 0xeab308];
+    const cloudCanvas = document.createElement('canvas');
+    cloudCanvas.width = 256;
+    cloudCanvas.height = 256;
+    const cloudCtx = cloudCanvas.getContext('2d');
+    if (cloudCtx) {
+      const grad = cloudCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+      grad.addColorStop(0.3, 'rgba(255, 255, 255, 0.45)');
+      grad.addColorStop(0.7, 'rgba(255, 255, 255, 0.12)');
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      cloudCtx.fillStyle = grad;
+      cloudCtx.fillRect(0, 0, 256, 256);
+    }
+    const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
+
+    for (let i = 0; i < 28; i++) {
+      const color = nebulaColors[i % nebulaColors.length];
+      const mat = new THREE.MeshBasicMaterial({
+        map: cloudTexture,
+        color: new THREE.Color(color),
+        transparent: true,
+        opacity: 0.18 + Math.random() * 0.15,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const geo = new THREE.PlaneGeometry(1200 + Math.random() * 1800, 1200 + Math.random() * 1800);
+      const cloud = new THREE.Mesh(geo, mat);
+      const r = 4000 + Math.random() * 6000;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = (Math.random() - 0.5) * Math.PI * 0.8;
+      cloud.position.set(r * Math.cos(theta), r * Math.sin(phi), r * Math.sin(theta));
+      cloud.lookAt(0, 0, 0);
+      nebulaGroup.add(cloud);
+    }
+    scene.add(nebulaGroup);
+
     // Starfield
-    const starCount = 2000;
+    const starCount = 3000;
     const starGeo = new THREE.BufferGeometry();
     const starPos = new Float32Array(starCount * 3);
     const starColors = new Float32Array(starCount * 3);
@@ -136,18 +209,19 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
       starPos[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
       starPos[i * 3 + 2] = radius * Math.cos(phi);
 
-      const colorVal = 0.5 + Math.random() * 0.2;
-      starColors[i * 3] = colorVal * (Math.random() > 0.5 ? 1 : 0.85);
+      const colorVal = 0.6 + Math.random() * 0.4;
+      const isBlue = Math.random() > 0.6;
+      starColors[i * 3] = isBlue ? colorVal * 0.8 : colorVal;
       starColors[i * 3 + 1] = colorVal * 0.95;
-      starColors[i * 3 + 2] = colorVal * (Math.random() > 0.5 ? 1 : 0.8);
+      starColors[i * 3 + 2] = isBlue ? colorVal : colorVal * 0.85;
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
     starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
     const starMat = new THREE.PointsMaterial({
-      size: 1.0,
+      size: 1.2,
       vertexColors: true,
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.85,
       sizeAttenuation: false,
       depthWrite: false,
     });
@@ -158,11 +232,11 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     // Distant Gas Giant Planet
     const planetGeo = new THREE.SphereGeometry(2400, 32, 32);
     const planetMat = new THREE.MeshStandardMaterial({
-      color: 0x1e3a8a,
-      roughness: 0.8,
-      metalness: 0.1,
-      emissive: 0x0c1e4d,
-      emissiveIntensity: 0.2,
+      color: 0x2563eb,
+      roughness: 0.6,
+      metalness: 0.2,
+      emissive: 0x1d4ed8,
+      emissiveIntensity: 0.35,
     });
     const planet = new THREE.Mesh(planetGeo, planetMat);
     planet.position.set(8000, -1500, -14000);
@@ -173,9 +247,9 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     const asteroidGroup = new THREE.Group();
     const asteroidGeo = new THREE.DodecahedronGeometry(1, 1);
     const asteroidMat = new THREE.MeshStandardMaterial({
-      color: 0x475569,
-      roughness: 0.9,
-      metalness: 0.2,
+      color: 0x64748b,
+      roughness: 0.7,
+      metalness: 0.3,
       flatShading: true,
     });
 
@@ -205,9 +279,9 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
     const dustMat = new THREE.PointsMaterial({
       color: 0x38bdf8,
-      size: 0.35,
+      size: 0.45,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.5,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -221,23 +295,37 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     shipRoot.add(cockpitGroup);
     cockpitFrameRef.current = cockpitGroup;
 
-    // Dashboard console structure
-    const dashGeo = new THREE.BoxGeometry(1.6, 0.4, 0.8);
+    // Dashboard console structure - Lighter brushed titanium slate
+    const dashGeo = new THREE.BoxGeometry(1.6, 0.42, 0.85);
     const dashMat = new THREE.MeshStandardMaterial({
-      color: 0x111827,
-      metalness: 0.8,
-      roughness: 0.4,
+      color: 0x334155, // Lighter Titanium Slate Blue (high contrast against space)
+      metalness: 0.85,
+      roughness: 0.25,
     });
     const dash = new THREE.Mesh(dashGeo, dashMat);
     dash.position.set(0, -0.15, -0.6);
     dash.rotation.x = 0.25;
     cockpitGroup.add(dash);
 
-    // Cockpit Canopy Structural Struts (Star Citizen Aegis/Anvil style)
+    // Dashboard console trim with illuminated LED status strips
+    const dashTrimGeo = new THREE.BoxGeometry(1.58, 0.03, 0.04);
+    const dashTrimMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    const dashTrim = new THREE.Mesh(dashTrimGeo, dashTrimMat);
+    dashTrim.position.set(0, 0.18, 0.38);
+    dash.add(dashTrim);
+
+    // Cockpit Canopy Structural Struts - Lighter titanium frame with metallic sheen
     const strutMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
+      color: 0x475569, // Titanium Slate
       metalness: 0.9,
-      roughness: 0.3,
+      roughness: 0.2,
+    });
+
+    // Metallic trim highlights along struts
+    const strutTrimMat = new THREE.MeshStandardMaterial({
+      color: 0x94a3b8, // Light metallic silver trim
+      metalness: 0.95,
+      roughness: 0.15,
     });
 
     // Left canopy arch
@@ -247,11 +335,19 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     leftArch.rotation.set(-0.35, 0.2, 0.35);
     cockpitGroup.add(leftArch);
 
+    const leftArchTrim = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.052, 1.48), strutTrimMat);
+    leftArchTrim.position.set(-0.012, 0, 0);
+    leftArch.add(leftArchTrim);
+
     // Right canopy arch
     const rightArch = new THREE.Mesh(archGeo, strutMat);
     rightArch.position.set(0.55, 0.45, -0.3);
     rightArch.rotation.set(-0.35, -0.2, -0.35);
     cockpitGroup.add(rightArch);
+
+    const rightArchTrim = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.052, 1.48), strutTrimMat);
+    rightArchTrim.position.set(0.012, 0, 0);
+    rightArch.add(rightArchTrim);
 
     // Top crossbar
     const topBarGeo = new THREE.BoxGeometry(0.9, 0.04, 0.05);
@@ -265,6 +361,55 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
     centerStrut.position.set(0, 0.68, -0.7);
     centerStrut.rotation.x = -0.45;
     cockpitGroup.add(centerStrut);
+
+    // 3D CANOPY WINDSHIELD GLASS WITH REFLECTION
+    const glassGeo = new THREE.SphereGeometry(1.05, 32, 24, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    glassGeo.rotateX(Math.PI / 2);
+
+    const glassCanvas = document.createElement('canvas');
+    glassCanvas.width = 512;
+    glassCanvas.height = 512;
+    const gCtx = glassCanvas.getContext('2d');
+    if (gCtx) {
+      gCtx.fillStyle = 'rgba(15, 23, 42, 0.05)';
+      gCtx.fillRect(0, 0, 512, 512);
+
+      // Curved reflection highlights along glass top
+      const glassGrad = gCtx.createLinearGradient(0, 0, 512, 512);
+      glassGrad.addColorStop(0, 'rgba(56, 189, 248, 0.35)');
+      glassGrad.addColorStop(0.2, 'rgba(255, 255, 255, 0.22)');
+      glassGrad.addColorStop(0.5, 'rgba(56, 189, 248, 0.06)');
+      glassGrad.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
+      gCtx.fillStyle = glassGrad;
+      gCtx.fillRect(0, 0, 512, 256);
+
+      // Hexagonal canopy grid HUD reflection pattern
+      gCtx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+      gCtx.lineWidth = 1;
+      for (let x = 0; x < 512; x += 32) {
+        gCtx.beginPath();
+        gCtx.moveTo(x, 0);
+        gCtx.lineTo(x + 16, 512);
+        gCtx.stroke();
+      }
+    }
+    const glassReflectionTexture = new THREE.CanvasTexture(glassCanvas);
+
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x38bdf8,
+      metalness: 0.1,
+      roughness: 0.1,
+      transmission: 0.88,
+      transparent: true,
+      opacity: 0.25,
+      map: glassReflectionTexture,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const windshieldGlass = new THREE.Mesh(glassGeo, glassMat);
+    windshieldGlass.position.set(0, 0.2, -0.3);
+    cockpitGroup.add(windshieldGlass);
 
     // Dynamic Flight Stick in Cockpit
     const stickBaseGeo = new THREE.CylinderGeometry(0.05, 0.07, 0.04, 16);
@@ -510,6 +655,7 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
         // Apply smooth kinematic transform to 3D ship mesh
         meshGroup.position.copy(smoothState.pos);
         meshGroup.quaternion.copy(smoothState.rot);
+        meshGroup.visible = ship.hull > 0;
 
         // Flaring thruster plume when ship has velocity
         const speed = smoothState.vel.length();
@@ -517,6 +663,23 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
         plumes.forEach((plume) => {
           const s = Math.min(2.5, 0.4 + speed / 80);
           plume.scale.set(s, s, s * (ship.boost ? 2.5 : 1.2));
+        });
+
+        // Dynamic shield aura hit flash on ship model (subtle impact glow)
+        const shieldAuras = meshGroup.getObjectsByProperty('name', 'shieldAura');
+        const nowMs = Date.now();
+        const timeSinceHit = (nowMs - (ship.lastHit || 0)) / 1000;
+        shieldAuras.forEach((auraObj) => {
+          const auraMesh = auraObj as THREE.Mesh;
+          const mat = auraMesh.material as THREE.MeshBasicMaterial;
+          if (timeSinceHit < 0.25) {
+            const flash = 1.0 - timeSinceHit / 0.25;
+            auraMesh.scale.setScalar(1.0 + flash * 0.05);
+            mat.opacity = (ship.shield > 0 ? 0.08 : 0.01) + flash * 0.18;
+          } else {
+            auraMesh.scale.setScalar(1.0);
+            mat.opacity = ship.shield > 0 ? 0.08 : 0.01;
+          }
         });
       });
 
@@ -540,6 +703,7 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
         const radarSphereRadius = 0.11;
 
         activeTargets.forEach((target) => {
+          if (target.hull <= 0) return; // Skip radar contact for destroyed targets
           const smooth = smoothMap.get(target.id);
           const targetWorldPos = smooth ? smooth.pos : new THREE.Vector3(target.position.x, target.position.y, target.position.z);
 
@@ -590,7 +754,7 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
       }
 
       // CALCULATE SCREEN-SPACE TARGET BRACKET AND PREDICTED IMPACT POINT (PIP)
-      const currentTarget = activeTargets.find((t) => t.id === lockedTargetId);
+      const currentTarget = activeTargets.find((t) => t.id === lockedTargetId && t.hull > 0);
       if (currentTarget && camera) {
         const smooth = smoothMap.get(currentTarget.id);
         const targetWorldPos = smooth
@@ -607,10 +771,50 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
         const screenW = containerRef.current?.clientWidth || window.innerWidth;
         const screenH = containerRef.current?.clientHeight || window.innerHeight;
 
+        const isOnScreen = isTargetInFront && targetScreen.x >= -0.92 && targetScreen.x <= 0.92 && targetScreen.y >= -0.92 && targetScreen.y <= 0.92;
+
         const screenPos = {
           x: ((targetScreen.x + 1) / 2) * screenW,
           y: ((-targetScreen.y + 1) / 2) * screenH,
-          visible: isTargetInFront,
+          visible: isOnScreen,
+        };
+
+        // Edge Indicator math for off-screen targeted ship
+        const dirToTargetWorld = targetWorldPos.clone().sub(new THREE.Vector3(pState.position.x, pState.position.y, pState.position.z)).normalize();
+        const targetDirCam = dirToTargetWorld.clone().transformDirection(camera.matrixWorldInverse);
+
+        let targetDirX = targetDirCam.x;
+        let targetDirY = -targetDirCam.y;
+        if (Math.hypot(targetDirX, targetDirY) < 0.001) {
+          targetDirY = -1.0; // Default to pointing up if target is perfectly on the central line
+        }
+        const targetEdgeAngle = Math.atan2(targetDirY, targetDirX);
+
+        const halfW = screenW / 2;
+        const halfH = screenH / 2;
+        const targetMargin = 100; // keep it safe from side elements
+        const targetEdgeRadiusX = halfW - targetMargin;
+        const targetEdgeRadiusY = halfH - targetMargin;
+        const targetCosA = Math.cos(targetEdgeAngle);
+        const targetSinA = Math.sin(targetEdgeAngle);
+
+        const targetScaleX = Math.abs(targetCosA) > 0.001 ? targetEdgeRadiusX / Math.abs(targetCosA) : 10000;
+        const targetScaleY = Math.abs(targetSinA) > 0.001 ? targetEdgeRadiusY / Math.abs(targetSinA) : 10000;
+        const targetScale = Math.min(targetScaleX, targetScaleY);
+        const targetEdgeX = halfW + targetCosA * targetScale;
+        const targetEdgeY = halfH + targetSinA * targetScale;
+
+        // Angle between camera forward (0, 0, -1) and targetDirCam. Both are normalized.
+        // Dot product is targetDirCam.dot(0, 0, -1) = -targetDirCam.z
+        const offNoseAngleRad = Math.acos(Math.max(-1, Math.min(1, -targetDirCam.z)));
+        const offNoseDegrees = Math.round((offNoseAngleRad * 180) / Math.PI);
+
+        const offScreen = {
+          isOnScreen,
+          edgeX: targetEdgeX,
+          edgeY: targetEdgeY,
+          edgeAngle: targetEdgeAngle,
+          offNoseDegrees,
         };
 
         // Solve Ballistic Quadratic Intercept (Lead PIP)
@@ -666,6 +870,7 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
           screenPos,
           leadScreenPos,
           inGimbalCone: isTargetInFront && Math.abs(targetScreen.x) < 0.6 && Math.abs(targetScreen.y) < 0.6,
+          offScreen,
         });
       } else {
         onLeadPipRef.current?.(null);
@@ -763,6 +968,60 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
         onTviRef.current?.(null);
       }
 
+      // DYNAMIC EXPLOSION & SHIELD IMPACT PARTICLE UPDATE IN RENDER LOOP
+      if (explosionGroup.current) {
+        const activeExplosions = activeExplosionMeshes.current;
+        const currentExpList = explosionsRef.current;
+        const nowMs = Date.now();
+
+        // 1. Spawn newly created hit impact effects into the Three.js scene
+        currentExpList.forEach((exp) => {
+          const age = (nowMs - exp.startTime) / 1000;
+          if (age < exp.duration && !activeExplosions.has(exp.id)) {
+            // Unit radius geometry (1.0 meter base)
+            const geo = new THREE.IcosahedronGeometry(1.0, 1);
+            const mat = new THREE.MeshBasicMaterial({
+              color: new THREE.Color(exp.color),
+              wireframe: true,
+              transparent: true,
+              opacity: 0.35,
+              blending: THREE.AdditiveBlending,
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(exp.position.x, exp.position.y, exp.position.z);
+            explosionGroup.current?.add(mesh);
+
+            activeExplosions.set(exp.id, {
+              mesh,
+              geo,
+              mat,
+              startTime: exp.startTime,
+              duration: exp.duration,
+              scale: exp.scale,
+            });
+          }
+        });
+
+        // 2. Animate scale and opacity frame-by-frame, disposing expired meshes
+        activeExplosions.forEach((data, id) => {
+          const age = (nowMs - data.startTime) / 1000;
+          if (age >= data.duration) {
+            explosionGroup.current?.remove(data.mesh);
+            data.geo.dispose();
+            data.mat.dispose();
+            activeExplosions.delete(id);
+          } else {
+            const progress = Math.min(1.0, age / data.duration);
+            // Slight expansion from base scale to base scale * 1.3
+            const currentScale = data.scale * (1.0 + progress * 0.3);
+            data.mesh.scale.set(currentScale, currentScale, currentScale);
+            // Low max opacity (0.35) fading quickly to zero
+            const fade = Math.max(0, 1 - progress);
+            data.mat.opacity = 0.35 * fade * fade;
+          }
+        });
+      }
+
       renderer.render(scene, camera);
     };
 
@@ -772,6 +1031,11 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
       cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
       renderer.dispose();
+      activeExplosionMeshes.current.forEach((data) => {
+        data.geo.dispose();
+        data.mat.dispose();
+      });
+      activeExplosionMeshes.current.clear();
       if (containerRef.current && renderer.domElement) {
         containerRef.current.removeChild(renderer.domElement);
       }
@@ -807,37 +1071,6 @@ export const CockpitCanvas: React.FC<CockpitCanvasProps> = ({
       group.add(boltMesh);
     });
   }, [localLasers, remoteLasers]);
-
-  // Update dynamic explosion particle effects
-  useEffect(() => {
-    if (!explosionGroup.current) return;
-    const group = explosionGroup.current;
-
-    while (group.children.length > 0) {
-      group.remove(group.children[0]);
-    }
-
-    const now = Date.now();
-    explosions.forEach((exp) => {
-      const age = (now - exp.startTime) / 1000;
-      if (age < exp.duration) {
-        const progress = age / exp.duration;
-        const currentScale = exp.scale * (1 + progress * 4);
-
-        const expGeo = new THREE.IcosahedronGeometry(currentScale, 1);
-        const expMat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(exp.color),
-          wireframe: true,
-          transparent: true,
-          opacity: 1 - progress,
-          blending: THREE.AdditiveBlending,
-        });
-        const expMesh = new THREE.Mesh(expGeo, expMat);
-        expMesh.position.set(exp.position.x, exp.position.y, exp.position.z);
-        group.add(expMesh);
-      }
-    });
-  }, [explosions]);
 
   return (
     <div
@@ -922,6 +1155,7 @@ function createSpaceshipModel(isAI: boolean, callsign: string = ''): THREE.Group
     blending: THREE.AdditiveBlending,
   });
   const aura = new THREE.Mesh(auraGeo, auraMat);
+  aura.name = 'shieldAura';
   ship.add(aura);
 
   // Intense glowing core navigation light for extreme distance visibility

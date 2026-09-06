@@ -26,11 +26,11 @@ export interface ShipSpecs {
 
 export const DEFAULT_SPECS: ShipSpecs = {
   mass: 22000,
-  // User spec: 8G forward, 5G lateral/vertical strafes, 3G reverse thrust
+  // Reduced accelerations by 30% for forward (5.6G) and lateral/vertical (3.5G), while keeping reverse (3G) unchanged.
   // Standard gravity g = 9.81 m/s^2 -> Force = mass * G * 9.81
-  mainThrust: 22000 * 8 * 9.81,      // 1,726,560 N (8G forward acceleration)
-  retroThrust: 22000 * 3 * 9.81,     // 647,460 N (3G reverse acceleration)
-  maneuverThrust: 22000 * 5 * 9.81,  // 1,079,100 N (5G lateral / vertical strafe)
+  mainThrust: 22000 * 5.6 * 9.81,     // 1,208,592 N (5.6G forward acceleration - reduced 30% from 8G)
+  retroThrust: 22000 * 3 * 9.81,      // 647,460 N (3G reverse acceleration - unchanged)
+  maneuverThrust: 22000 * 3.5 * 9.81, // 755,370 N (3.5G lateral / vertical strafe - reduced 30% from 5G)
   pitchTorque: 95000,
   yawTorque: 85000,
   rollTorque: 120000,
@@ -210,9 +210,9 @@ export class NewtonianFlightEngine {
     const localVelRight = this.vel.dot(right);
     const localVelUp = this.vel.dot(up);
 
-    const maxMainAccel = (this.specs.mainThrust / state.mass) * forwardBoostMult;   // ~78.48 m/s^2 (8G, or ~14G boosted)
+    const maxMainAccel = (this.specs.mainThrust / state.mass) * forwardBoostMult;   // ~54.94 m/s^2 (5.6G, or ~9.8G boosted)
     const maxRetroAccel = this.specs.retroThrust / state.mass;                     // ~29.43 m/s^2 (3G)
-    const maxManeuverAccel = this.specs.maneuverThrust / state.mass;               // ~49.05 m/s^2 (5G)
+    const maxManeuverAccel = this.specs.maneuverThrust / state.mass;               // ~34.34 m/s^2 (3.5G)
 
     let targetAccelX = 0;
     let targetAccelY = 0;

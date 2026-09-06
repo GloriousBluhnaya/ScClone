@@ -54,6 +54,13 @@ export interface TargetInfo {
   screenPos?: { x: number; y: number; visible: boolean };
   leadScreenPos?: { x: number; y: number; visible: boolean };
   inGimbalCone: boolean;
+  offScreen?: {
+    isOnScreen: boolean;
+    edgeX: number;
+    edgeY: number;
+    edgeAngle: number;
+    offNoseDegrees: number;
+  };
 }
 
 export interface TVIMarker {

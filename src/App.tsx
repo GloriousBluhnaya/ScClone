@@ -79,10 +79,10 @@ export default function App() {
       velocity: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: -0.7071, z: 0, w: 0.7071 },
       angularVelocity: { x: 0, y: 0, z: 0 },
-      hull: 100,
-      maxHull: 100,
-      shield: 100,
-      maxShield: 100,
+      hull: 120,
+      maxHull: 120,
+      shield: 200,
+      maxShield: 200,
       lastHit: 0,
       score: 0,
       targetId: null,
@@ -140,9 +140,13 @@ export default function App() {
   const [hitConfirmed, setHitConfirmed] = useState(false);
 
   // Player Stats
-  const [playerHull, setPlayerHull] = useState(100);
-  const [playerShield, setPlayerShield] = useState(100);
+  const [playerHull, setPlayerHull] = useState(120);
+  const [playerShield, setPlayerShield] = useState(200);
   const playerLastHitRef = useRef(0);
+  const [playerIsDead, setPlayerIsDead] = useState(false);
+  const playerIsDeadRef = useRef(false);
+  playerIsDeadRef.current = playerIsDead;
+  const [respawnCountdown, setRespawnCountdown] = useState(0);
   const [score, setScore] = useState(0);
   const [weaponCapacitor, setWeaponCapacitor] = useState(75);
   const weaponCapacitorRef = useRef(75);
@@ -522,8 +526,8 @@ export default function App() {
                 position: hit,
                 color: msg.shield > 0 ? '#38bdf8' : '#ef4444',
                 startTime: Date.now(),
-                duration: 0.6,
-                scale: 3,
+                duration: 0.3,
+                scale: 1.1,
               },
             ]);
           }
@@ -1112,10 +1116,21 @@ export default function App() {
       });
 
       // Local player shield regeneration
-      if (now - playerLastHitRef.current > 3000) {
+      if (!playerIsDeadRef.current) {
+        const timeSinceLastHit = now - playerLastHitRef.current;
         setPlayerShield((prev) => {
-          if (prev < 100) {
-            return Math.min(100, prev + 8 * dt);
+          if (prev >= 200) return prev;
+          
+          if (prev > 0) {
+            // Still has shields: recharge after 3 seconds at 20HP per second
+            if (timeSinceLastHit > 3000) {
+              return Math.min(200, prev + 20 * dt);
+            }
+          } else {
+            // Shields are fully down: recharge after 5 seconds at 20HP per second
+            if (timeSinceLastHit > 5000) {
+              return Math.min(200, prev + 20 * dt);
+            }
           }
           return prev;
         });
@@ -1123,14 +1138,38 @@ export default function App() {
 
       // Continuously dead-reckon remote ships between server snapshot intervals
       setRemoteShips((prevShips) =>
-        prevShips.map((s) => ({
-          ...s,
-          position: {
+        prevShips.map((s) => {
+          const nextPos = {
             x: s.position.x + s.velocity.x * dt,
             y: s.position.y + s.velocity.y * dt,
             z: s.position.z + s.velocity.z * dt,
-          },
-        }))
+          };
+
+          // Apply matching shield recharge rules to enemy ships if they are alive
+          let nextShield = s.shield;
+          if (s.hull > 0) {
+            const timeSinceLastHit = now - s.lastHit;
+            if (s.shield < 200) {
+              if (s.shield > 0) {
+                // Still has shields: recharge after 3 seconds at 20HP per second
+                if (timeSinceLastHit > 3000) {
+                  nextShield = Math.min(200, s.shield + 20 * dt);
+                }
+              } else {
+                // Shields are fully down: recharge after 5 seconds at 20HP per second
+                if (timeSinceLastHit > 5000) {
+                  nextShield = Math.min(200, s.shield + 20 * dt);
+                }
+              }
+            }
+          }
+
+          return {
+            ...s,
+            position: nextPos,
+            shield: nextShield,
+          };
+        })
       );
 
       // Advance remote laser bolts & detect hits on player vessel
@@ -1178,8 +1217,8 @@ export default function App() {
                 position: nextPos,
                 color: '#ef4444',
                 startTime: Date.now(),
-                duration: 0.5,
-                scale: 3.0,
+                duration: 0.3,
+                scale: 1.1,
               },
             ]);
           } else {
@@ -1212,6 +1251,8 @@ export default function App() {
           // Use line-segment distance to prevent fast-moving lasers from tunneling through targets
           let hit = false;
           for (const target of targets) {
+            if (target.hull <= 0) continue; // Do not hit already destroyed ships
+
             // Vector from segment start to target
             const L = {
               x: target.position.x - laser.position.x,
@@ -1249,7 +1290,7 @@ export default function App() {
               setHitConfirmed(true);
               setTimeout(() => setHitConfirmed(false), 120);
 
-              // Explosion VFX
+              // Small hit impact VFX
               setExplosions((prevExp) => [
                 ...prevExp.slice(-10),
                 {
@@ -1257,8 +1298,8 @@ export default function App() {
                   position: nextPos,
                   color: target.shield > 0 ? '#00f0ff' : '#f97316',
                   startTime: Date.now(),
-                  duration: 0.5,
-                  scale: 2.8,
+                  duration: 0.3,
+                  scale: 1.0,
                 },
               ]);
 
@@ -1287,6 +1328,66 @@ export default function App() {
                         sld = 0;
                         hll = Math.max(0, hll - rem);
                       }
+
+                      if (hll <= 0 && s.hull > 0) {
+                        // Target destroyed explosion!
+                        if (!isAudioMuted) sounds.playExplosion();
+                        setScore((sc) => sc + 100);
+                        setExplosions((prevExp) => [
+                          ...prevExp.slice(-10),
+                          {
+                            id: 'exp-die-' + Math.random(),
+                            position: nextPos,
+                            color: '#f97316',
+                            startTime: Date.now(),
+                            duration: 1.5,
+                            scale: 5.5,
+                          },
+                          {
+                            id: 'exp-ring-' + Math.random(),
+                            position: nextPos,
+                            color: '#00f0ff',
+                            startTime: Date.now(),
+                            duration: 1.2,
+                            scale: 4.0,
+                          },
+                        ]);
+
+                        setCombatLog((prevLog) => [
+                          `TARGET DESTROYED: [${s.callsign}] eliminated! (+100 PTS) Respawning in 5s...`,
+                          ...prevLog.slice(0, 15),
+                        ]);
+
+                        // Schedule 5-second respawn
+                        const targetIdToRespawn = target.id;
+                        setTimeout(() => {
+                          setRemoteShips((curShips) =>
+                            curShips.map((rs) => {
+                              if (rs.id === targetIdToRespawn) {
+                                return {
+                                  ...rs,
+                                  hull: 120,
+                                  maxHull: 120,
+                                  shield: 200,
+                                  maxShield: 200,
+                                  position: {
+                                    x: (Math.random() - 0.5) * 300 + 150,
+                                    y: (Math.random() - 0.5) * 100,
+                                    z: -400,
+                                  },
+                                  velocity: { x: 0, y: 0, z: 0 },
+                                };
+                              }
+                              return rs;
+                            })
+                          );
+                          setCombatLog((prevLog) => [
+                            `TARGET RE-ENTERED ARENA: [${s.callsign}] has respawned.`,
+                            ...prevLog.slice(0, 15),
+                          ]);
+                        }, 5000);
+                      }
+
                       return { ...s, shield: sld, hull: hll, lastHit: Date.now() };
                     }
                     return s;
@@ -1309,6 +1410,14 @@ export default function App() {
 
         return updatedLasers;
       });
+
+      // Periodically prune expired explosion effects from state
+      setExplosions((prevExp) => {
+        if (prevExp.length === 0) return prevExp;
+        const nowMs = Date.now();
+        const active = prevExp.filter((e) => (nowMs - e.startTime) / 1000 < e.duration + 0.1);
+        return active.length === prevExp.length ? prevExp : active;
+      });
     };
 
     animId = requestAnimationFrame(loop);
@@ -1316,7 +1425,7 @@ export default function App() {
   }, [isAudioMuted]);
 
   // Reset ship position helper
-  const handleResetPosition = () => {
+  const handleResetPosition = useCallback(() => {
     setPhysicsState((prev) => ({
       ...prev,
       position: { x: 0, y: 0, z: 0 },
@@ -1325,7 +1434,63 @@ export default function App() {
       angularVelocity: { x: 0, y: 0, z: 0 },
       currentSpeed: 0,
     }));
-  };
+  }, []);
+
+  // Player destruction & 5-second respawn logic
+  const triggerPlayerDeath = useCallback(() => {
+    if (playerIsDeadRef.current) return;
+    playerIsDeadRef.current = true;
+    setPlayerIsDead(true);
+    setRespawnCountdown(5);
+
+    if (!isAudioMutedRef.current) sounds.playExplosion();
+
+    setExplosions((prev) => [
+      ...prev.slice(-10),
+      {
+        id: 'p-die-' + Math.random(),
+        position: { ...physicsStateRef.current.position },
+        color: '#ef4444',
+        startTime: Date.now(),
+        duration: 1.5,
+        scale: 6.0,
+      },
+      {
+        id: 'p-ring-' + Math.random(),
+        position: { ...physicsStateRef.current.position },
+        color: '#f97316',
+        startTime: Date.now(),
+        duration: 1.2,
+        scale: 4.5,
+      },
+    ]);
+
+    setCombatLog((prev) => [
+      'CRITICAL FAILURE: Hull Integrity Zero! Ship destroyed. Respawning in 5s...',
+      ...prev.slice(0, 15),
+    ]);
+
+    let secRemaining = 5;
+    const interval = setInterval(() => {
+      secRemaining -= 1;
+      setRespawnCountdown(secRemaining);
+      if (secRemaining <= 0) {
+        clearInterval(interval);
+        setPlayerHull(120);
+        setPlayerShield(200);
+        handleResetPosition();
+        setPlayerIsDead(false);
+        playerIsDeadRef.current = false;
+        setCombatLog((prev) => ['GLADIUS SYSTEMS RESTORED // Ship re-deployed to arena.', ...prev.slice(0, 15)]);
+      }
+    }, 1000);
+  }, [handleResetPosition]);
+
+  useEffect(() => {
+    if (playerHull <= 0 && !playerIsDeadRef.current) {
+      triggerPlayerDeath();
+    }
+  }, [playerHull, triggerPlayerDeath]);
 
   return (
     <div
@@ -1359,6 +1524,8 @@ export default function App() {
           virtualJoystick={virtualJoystick}
           playerHull={playerHull}
           playerShield={playerShield}
+          playerIsDead={playerIsDead}
+          respawnCountdown={respawnCountdown}
           weaponCapacitor={weaponCapacitor}
           hitConfirmed={hitConfirmed}
           score={score}

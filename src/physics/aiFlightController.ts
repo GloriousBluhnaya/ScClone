@@ -215,7 +215,7 @@ export class AIFlightController {
     const isArrow = ai.callsign.includes('ARROW');
     const isCutlass = ai.callsign.includes('CUTLASS');
     const maxSpeed = isArrow ? 380 : isCutlass ? 260 : 320;
-    const accelRate = isArrow ? 85 : isCutlass ? 50 : 65;
+    const accelRate = (isArrow ? 85 : isCutlass ? 50 : 65) * 0.7; // Reduced by 30%
     const turnSpeed = isArrow ? 2.6 : isCutlass ? 1.4 : 2.0;
 
     // Desired Aim vector: Lead Intercept Point for combat firing
